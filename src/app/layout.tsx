@@ -4,14 +4,14 @@ import './globals.css'
 import { serviceWorkerRegistrationScript } from './serviceWorkerRegistration'
 
 export const metadata: Metadata = {
-  title: 'Infinite Conflict Simulator',
-  description: 'Deterministic turn-based simulator and build planner for Infinite Conflict.',
+  title: 'InfiniteCalculators',
+  description: 'Calculator companion for Infinite Conflict fleets, score ratios, cargo sizing, and build optimization.',
   manifest: './manifest.json',
-  applicationName: 'IC Sim',
+  applicationName: 'InfiniteCalculators',
   appleWebApp: {
     capable: true,
     statusBarStyle: 'black-translucent',
-    title: 'IC Sim',
+    title: 'InfiniteCalculators',
   },
   icons: {
     icon: [
