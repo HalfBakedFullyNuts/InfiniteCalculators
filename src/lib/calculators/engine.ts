@@ -790,6 +790,202 @@ function computeBuildingOutputDelta(def: BuildingDef, abundance: Record<Resource
   return out;
 }
 
+// ─── Formula Build Recommendation ───────────────────────────────────────────
+// Direct algebraic recommendation: no greedy iteration needed.
+//
+// Key equivalences at any tier (derived from net weighted output):
+//   Metal Mine vs Mineral Extractor → compare metal% vs mineral% (same formula 3×abund − upkeep)
+//   Hydroponics Dome vs Solar Station → food wins when food% > energy% + 2
+//   Hydroponics Lab vs Solar Array   → food wins when food% > energy% + 6.67
+//   T1 ground 4-way: rank by (base × abund × resource_score − energy_upkeep×2)
+
+export interface FormulaBuildGroup {
+  buildingId: string;
+  buildingName: string;
+  count: number;
+  scoreDelta: number;
+  outputDelta: Record<ResourceId, number>;
+  workerCost: number;
+  spaceCost: number;
+  spaceType: 'ground' | 'orbital';
+}
+
+export interface FormulaBuildResult {
+  groups: FormulaBuildGroup[];
+  totalScoreDelta: number;
+  totalOutputDelta: Record<ResourceId, number>;
+  groundSpaceUsed: number;
+  orbitalSpaceUsed: number;
+  workersUsed: number;
+  groundSpaceRemaining: number;
+  orbitalSpaceRemaining: number;
+  workersRemaining: number;
+  groundReason: string;
+  orbitalT2Reason: string;
+  orbitalT3Reason: string;
+}
+
+function makeBuildGroup(
+  def: BuildingDef,
+  count: number,
+  abundance: Record<ResourceId, number>,
+  spaceType: 'ground' | 'orbital',
+): FormulaBuildGroup {
+  const perBuilding = computeBuildingOutputDelta(def, abundance);
+  const outputDelta: Record<ResourceId, number> = { ...BASE_RESOURCES };
+  for (const r of RESOURCE_ORDER) {
+    outputDelta[r] = (perBuilding[r] || 0) * count;
+  }
+  return {
+    buildingId: def.id,
+    buildingName: def.name,
+    count,
+    scoreDelta: def.scoreValue * count,
+    outputDelta,
+    workerCost: def.workerCost * count,
+    spaceCost: (spaceType === 'ground' ? def.groundSpaceCost : def.orbitalSpaceCost) * count,
+    spaceType,
+  };
+}
+
+export function formulaBuildRecommendation(
+  snapshot: ParsedSnapshot,
+  structuresById: Record<string, BuildingDef>,
+): FormulaBuildResult {
+  const built = snapshot.structures;
+  const abund = snapshot.abundance;
+  const m = abund.metal ?? 100;
+  const n = abund.mineral ?? 100;
+  const f = abund.food ?? 100;
+  const e = abund.energy ?? 100;
+
+  let groundFree = Math.max(0, snapshot.groundSpaceFree ?? 0);
+  let orbitalFree = Math.max(0, snapshot.orbitalSpaceFree ?? 0);
+  let workersFree = Math.max(0, snapshot.workersFree ?? 0);
+
+  const hasOutpost = (built['outpost'] || 0) > 0;
+  const hasColony = (built['colony'] || 0) > 0;
+  const hasMetropolis = (built['metropolis'] || 0) > 0;
+  const hasLaunchSite = (built['launch_site'] || 0) > 0;
+
+  // Formula reasoning strings
+  const groundReason = m >= n
+    ? `Metal ${m.toFixed(0)}% ≥ Mineral ${n.toFixed(0)}% → Metal buildings`
+    : `Mineral ${n.toFixed(0)}% > Metal ${m.toFixed(0)}% → Mineral buildings`;
+
+  const orbT2Threshold = 40 / 6;
+  const orbT2Reason = f >= e + orbT2Threshold
+    ? `Food ${f.toFixed(0)}% > Energy ${e.toFixed(0)}%+${orbT2Threshold.toFixed(1)}% → Hydroponics Lab`
+    : `Food ${f.toFixed(0)}% ≤ Energy ${e.toFixed(0)}%+${orbT2Threshold.toFixed(1)}% → Solar Array`;
+
+  const orbT3Threshold = 120 / 60;
+  const orbT3Reason = f >= e + orbT3Threshold
+    ? `Food ${f.toFixed(0)}% > Energy ${e.toFixed(0)}%+${orbT3Threshold.toFixed(1)}% → Hydroponics Dome`
+    : `Food ${f.toFixed(0)}% ≤ Energy ${e.toFixed(0)}%+${orbT3Threshold.toFixed(1)}% → Solar Station`;
+
+  const groups: FormulaBuildGroup[] = [];
+
+  function tryAdd(id: string, spaceCost: number, workerCost: number, spaceLeft: number, spaceType: 'ground' | 'orbital'): number {
+    const def = structuresById[id];
+    if (!def || spaceCost <= 0 || workerCost < 0) {
+      return 0;
+    }
+    const bySpace = Math.floor(spaceLeft / spaceCost);
+    const byWorker = workerCost > 0 ? Math.floor(workersFree / workerCost) : bySpace;
+    const count = Math.min(bySpace, byWorker);
+    if (count <= 0) {
+      return 0;
+    }
+    groups.push(makeBuildGroup(def, count, abund, spaceType));
+    workersFree -= workerCost * count;
+    return count;
+  }
+
+  // ── Ground space: T3 → T2 → T1 ──────────────────────────────────────────
+  if (hasMetropolis) {
+    const id = m >= n ? 'strip_metal_mine' : 'strip_mineral_extractor';
+    const built_ = tryAdd(id, 6, 200_000, groundFree, 'ground');
+    groundFree -= built_ * 6;
+  }
+
+  if (hasColony) {
+    const id = m >= n ? 'core_metal_mine' : 'core_mineral_extractor';
+    const built_ = tryAdd(id, 2, 40_000, groundFree, 'ground');
+    groundFree -= built_ * 2;
+  }
+
+  if (hasOutpost && groundFree > 0) {
+    // Rank T1 options by net weighted output at current abundances
+    // Metal mine: 300*m/100*1 − 10*2 = 3m − 20
+    // Mineral extractor: 200*n/100*1.5 − 10*2 = 3n − 20
+    // Solar generator: 100*e/100*2 − 0 = 2e
+    // Farm: 100*f/100*2 − 10*2 = 2f − 20
+    const t1Options: Array<{ id: string; net: number }> = [
+      { id: 'metal_mine', net: 3 * m - 20 },
+      { id: 'mineral_extractor', net: 3 * n - 20 },
+      { id: 'solar_generator', net: 2 * e },
+      { id: 'farm', net: 2 * f - 20 },
+    ].sort((a, b) => b.net - a.net);
+
+    // Fill all remaining ground with the top-ranked option
+    const best = t1Options[0];
+    if (best.net > 0) {
+      const built_ = tryAdd(best.id, 1, 5_000, groundFree, 'ground');
+      groundFree -= built_;
+    }
+  }
+
+  // ── Orbital space: T3 → T2 ───────────────────────────────────────────────
+  if (hasMetropolis) {
+    const foodNet = 60 * f - 120;
+    const id = foodNet >= 60 * e ? 'hydroponics_dome' : 'solar_station';
+    const built_ = tryAdd(id, 6, 200_000, orbitalFree, 'orbital');
+    orbitalFree -= built_ * 6;
+  }
+
+  if (hasColony && hasLaunchSite) {
+    const foodNet = 6 * f - 40;
+    const id = foodNet >= 6 * e ? 'hydroponics_lab' : 'solar_array';
+    const built_ = tryAdd(id, 2, 40_000, orbitalFree, 'orbital');
+    orbitalFree -= built_ * 2;
+  }
+
+  // ── Totals ────────────────────────────────────────────────────────────────
+  const totalOutputDelta: Record<ResourceId, number> = { ...BASE_RESOURCES };
+  let totalScoreDelta = 0;
+  let groundSpaceUsed = 0;
+  let orbitalSpaceUsed = 0;
+  let workersUsed = 0;
+
+  for (const g of groups) {
+    totalScoreDelta += g.scoreDelta;
+    workersUsed += g.workerCost;
+    if (g.spaceType === 'ground') {
+      groundSpaceUsed += g.spaceCost;
+    } else {
+      orbitalSpaceUsed += g.spaceCost;
+    }
+    for (const r of RESOURCE_ORDER) {
+      totalOutputDelta[r] = (totalOutputDelta[r] || 0) + (g.outputDelta[r] || 0);
+    }
+  }
+
+  return {
+    groups,
+    totalScoreDelta,
+    totalOutputDelta,
+    groundSpaceUsed,
+    orbitalSpaceUsed,
+    workersUsed,
+    groundSpaceRemaining: groundFree,
+    orbitalSpaceRemaining: orbitalFree,
+    workersRemaining: workersFree,
+    groundReason,
+    orbitalT2Reason: orbT2Reason,
+    orbitalT3Reason: orbT3Reason,
+  };
+}
+
 export function optimizeBuildForScore(snapshot: ParsedSnapshot, structuresById: Record<string, BuildingDef>, maxSteps: number): BuildOptimizationResult {
   const built = { ...snapshot.structures };
   const currentOutputs = { ...snapshot.resourcesOutput };

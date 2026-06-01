@@ -8,14 +8,15 @@ import {
   calculateFleetBalancePlan,
   calculateFleetScoreBreakdown,
   fleetFromBudget,
+  formulaBuildRecommendation,
   formatHumanNumber,
-  optimizeBuildForScore,
   optimizeWarships,
   parseCompositionInput,
   parseHumanNumber,
   parseRatioInput,
   parseSnapshotInput,
   projectAvailableResources,
+  type FormulaBuildResult,
   type ParsedSnapshot,
   type ResourceId,
   type WarshipBudgetResult,
@@ -87,7 +88,6 @@ export default function CalculatorsPage() {
   const [fleetInput, setFleetInput] = useState(DEFAULT_FLEET_COMPOSITION);
   const [ratioInput, setRatioInput] = useState(DEFAULT_RATIO);
   const [projectionTicks, setProjectionTicks] = useState(0);
-  const [buildSteps, setBuildSteps] = useState(12);
   const [warshipMetal, setWarshipMetal] = useState('');
   const [warshipMineral, setWarshipMineral] = useState('');
 
@@ -115,9 +115,9 @@ export default function CalculatorsPage() {
     [parsedFleet, ratioWeights],
   );
 
-  const buildOptimization = useMemo(
-    () => optimizeBuildForScore(parsed, defs.structuresById, Math.max(1, Math.floor(buildSteps))),
-    [parsed, defs.structuresById, buildSteps],
+  const buildFormula = useMemo<FormulaBuildResult>(
+    () => formulaBuildRecommendation(parsed, defs.structuresById),
+    [parsed, defs.structuresById],
   );
 
   const availableNow = useMemo(() => projectAvailableResources(parsed, Math.max(0, Math.floor(projectionTicks))), [parsed, projectionTicks]);
@@ -299,46 +299,85 @@ export default function CalculatorsPage() {
             </div>
           </TableCard>
 
-          <TableCard title="4) Build Optimizer: Output per Score">
-            <div className="mb-3 flex items-center gap-2 text-xs">
-              <label className="uppercase tracking-[0.12em] text-pink-nebula-muted">Steps</label>
-              <input
-                type="number"
-                min={1}
-                max={100}
-                value={buildSteps}
-                onChange={(event) => setBuildSteps(Number(event.target.value || 12))}
-                className="w-20 rounded-md border border-cyan-300/20 bg-black/35 px-2 py-1 text-sm text-pink-nebula-text outline-none"
-              />
-            </div>
-            <div className="grid grid-cols-2 gap-2 text-sm md:grid-cols-4">
-              <div className="rounded-lg border border-white/10 bg-black/20 p-2">Added score: <span className="font-semibold">{formatHumanNumber(buildOptimization.totalScoreDelta)}</span></div>
-              <div className="rounded-lg border border-white/10 bg-black/20 p-2">Weighted output delta: <span className="font-semibold">{formatHumanNumber(buildOptimization.totalWeightedOutputDelta)}</span></div>
-              <div className="rounded-lg border border-white/10 bg-black/20 p-2">Workers left: <span className="font-semibold">{formatHumanNumber(buildOptimization.remaining.workersFree)}</span></div>
-              <div className="rounded-lg border border-white/10 bg-black/20 p-2">Ground/Orbital left: <span className="font-semibold">{formatHumanNumber(buildOptimization.remaining.groundSpaceFree)} / {formatHumanNumber(buildOptimization.remaining.orbitalSpaceFree)}</span></div>
-            </div>
-            <div className="mt-3 max-h-[250px] overflow-auto rounded-lg border border-white/10">
-              <table className="min-w-full text-xs">
-                <thead className="bg-black/30 text-pink-nebula-muted">
-                  <tr>
-                    <th className="px-2 py-1 text-left">#</th>
-                    <th className="px-2 py-1 text-left">Build</th>
-                    <th className="px-2 py-1 text-right">Eff.</th>
-                    <th className="px-2 py-1 text-right">Score</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {buildOptimization.steps.map((step, index) => (
-                    <tr key={`${step.id}-${index}`} className="border-t border-white/10">
-                      <td className="px-2 py-1">{index + 1}</td>
-                      <td className="px-2 py-1">{step.name}</td>
-                      <td className="px-2 py-1 text-right">{step.efficiency.toFixed(4)}</td>
-                      <td className="px-2 py-1 text-right">{step.scoreDelta}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+          <TableCard title="4) Build Optimizer: Resource Production">
+            {buildFormula.groups.length === 0 ? (
+              <div className="text-sm text-pink-nebula-muted">
+                No free space or workers detected — paste a planet snapshot to get recommendations.
+              </div>
+            ) : (
+              <>
+                <div className="mb-3 flex flex-wrap gap-2">
+                  <span className="rounded-full border border-cyan-300/20 bg-black/30 px-2 py-0.5 text-[11px] text-cyan-200/80">Ground: {buildFormula.groundReason}</span>
+                  {buildFormula.groups.some((g) => g.spaceType === 'orbital') && (
+                    <>
+                      <span className="rounded-full border border-purple-400/20 bg-black/30 px-2 py-0.5 text-[11px] text-purple-200/80">Orbital T3: {buildFormula.orbitalT3Reason}</span>
+                      <span className="rounded-full border border-purple-400/20 bg-black/30 px-2 py-0.5 text-[11px] text-purple-200/80">Orbital T2: {buildFormula.orbitalT2Reason}</span>
+                    </>
+                  )}
+                </div>
+
+                <div className="overflow-x-auto rounded-lg border border-white/10">
+                  <table className="min-w-full text-xs">
+                    <thead className="bg-black/30 text-pink-nebula-muted">
+                      <tr>
+                        <th className="px-2 py-1 text-left">Building</th>
+                        <th className="px-2 py-1 text-right">Count</th>
+                        <th className="px-2 py-1 text-right">Score</th>
+                        <th className="px-2 py-1 text-right">Metal/tick</th>
+                        <th className="px-2 py-1 text-right">Mineral/tick</th>
+                        <th className="px-2 py-1 text-right">Food/tick</th>
+                        <th className="px-2 py-1 text-right">Energy/tick</th>
+                        <th className="px-2 py-1 text-right">Workers</th>
+                        <th className="px-2 py-1 text-right">Space</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {buildFormula.groups.map((g) => (
+                        <tr key={g.buildingId} className="border-t border-white/10">
+                          <td className="px-2 py-1 font-medium">{g.buildingName}</td>
+                          <td className="px-2 py-1 text-right">{g.count}</td>
+                          <td className="px-2 py-1 text-right text-amber-300/90">+{formatHumanNumber(g.scoreDelta)}</td>
+                          <td className="px-2 py-1 text-right">{g.outputDelta.metal !== 0 ? formatHumanNumber(g.outputDelta.metal) : '—'}</td>
+                          <td className="px-2 py-1 text-right">{g.outputDelta.mineral !== 0 ? formatHumanNumber(g.outputDelta.mineral) : '—'}</td>
+                          <td className="px-2 py-1 text-right">{g.outputDelta.food !== 0 ? formatHumanNumber(g.outputDelta.food) : '—'}</td>
+                          <td className="px-2 py-1 text-right">{g.outputDelta.energy !== 0 ? formatHumanNumber(g.outputDelta.energy) : '—'}</td>
+                          <td className="px-2 py-1 text-right text-pink-nebula-muted">{formatHumanNumber(g.workerCost)}</td>
+                          <td className="px-2 py-1 text-right text-pink-nebula-muted">{g.spaceCost} {g.spaceType === 'ground' ? 'G' : 'O'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot className="border-t-2 border-white/20 bg-black/20 font-semibold">
+                      <tr>
+                        <td className="px-2 py-1">Total</td>
+                        <td className="px-2 py-1 text-right">{buildFormula.groups.reduce((s, g) => s + g.count, 0)}</td>
+                        <td className="px-2 py-1 text-right text-amber-300">+{formatHumanNumber(buildFormula.totalScoreDelta)}</td>
+                        <td className="px-2 py-1 text-right">{buildFormula.totalOutputDelta.metal !== 0 ? formatHumanNumber(buildFormula.totalOutputDelta.metal) : '—'}</td>
+                        <td className="px-2 py-1 text-right">{buildFormula.totalOutputDelta.mineral !== 0 ? formatHumanNumber(buildFormula.totalOutputDelta.mineral) : '—'}</td>
+                        <td className="px-2 py-1 text-right">{buildFormula.totalOutputDelta.food !== 0 ? formatHumanNumber(buildFormula.totalOutputDelta.food) : '—'}</td>
+                        <td className="px-2 py-1 text-right">{buildFormula.totalOutputDelta.energy !== 0 ? formatHumanNumber(buildFormula.totalOutputDelta.energy) : '—'}</td>
+                        <td className="px-2 py-1 text-right text-pink-nebula-muted">{formatHumanNumber(buildFormula.workersUsed)}</td>
+                        <td className="px-2 py-1 text-right text-pink-nebula-muted">{buildFormula.groundSpaceUsed}G {buildFormula.orbitalSpaceUsed}O</td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+
+                <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
+                  <div className="rounded-lg border border-white/10 bg-black/20 p-2">
+                    <div className="text-pink-nebula-muted">Ground remaining</div>
+                    <div className="font-semibold">{buildFormula.groundSpaceRemaining}</div>
+                  </div>
+                  <div className="rounded-lg border border-white/10 bg-black/20 p-2">
+                    <div className="text-pink-nebula-muted">Orbital remaining</div>
+                    <div className="font-semibold">{buildFormula.orbitalSpaceRemaining}</div>
+                  </div>
+                  <div className="rounded-lg border border-white/10 bg-black/20 p-2">
+                    <div className="text-pink-nebula-muted">Workers remaining</div>
+                    <div className="font-semibold">{formatHumanNumber(buildFormula.workersRemaining)}</div>
+                  </div>
+                </div>
+              </>
+            )}
           </TableCard>
         </section>
 
