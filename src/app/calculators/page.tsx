@@ -10,12 +10,15 @@ import {
   fleetFromBudget,
   formatHumanNumber,
   optimizeBuildForScore,
+  optimizeWarships,
   parseCompositionInput,
+  parseHumanNumber,
   parseRatioInput,
   parseSnapshotInput,
   projectAvailableResources,
   type ParsedSnapshot,
   type ResourceId,
+  type WarshipBudgetResult,
 } from '../../lib/calculators/engine';
 
 const RESOURCE_ORDER: ResourceId[] = ['metal', 'mineral', 'food', 'energy'];
@@ -85,6 +88,8 @@ export default function CalculatorsPage() {
   const [ratioInput, setRatioInput] = useState(DEFAULT_RATIO);
   const [projectionTicks, setProjectionTicks] = useState(0);
   const [buildSteps, setBuildSteps] = useState(12);
+  const [warshipMetal, setWarshipMetal] = useState('');
+  const [warshipMineral, setWarshipMineral] = useState('');
 
   const parsed = useMemo<ParsedSnapshot>(() => parseSnapshotInput(rawInput, defs), [rawInput, defs]);
 
@@ -123,6 +128,15 @@ export default function CalculatorsPage() {
   );
 
   const totalOtherStored = parsed.resourcesStored.food + parsed.resourcesStored.energy;
+
+  const warshipOptimizer = useMemo(() => {
+    const m = parseHumanNumber(warshipMetal);
+    const n = parseHumanNumber(warshipMineral);
+    if (m <= 0 && n <= 0) {
+      return null;
+    }
+    return optimizeWarships(m, n, defs.shipsById);
+  }, [warshipMetal, warshipMineral, defs.shipsById]);
 
   return (
     <main className="relative min-h-screen overflow-x-hidden bg-transparent text-pink-nebula-text">
@@ -384,7 +398,98 @@ export default function CalculatorsPage() {
             </ul>
           </TableCard>
         </section>
+
+        <TableCard title="6) Warship Budget Optimizer">
+          <p className="mb-4 text-xs text-pink-nebula-muted">
+            Enter a metal and mineral budget. Supports human numbers (e.g. 5M, 500K). Ships considered: Fighter, Bomber, Frigate, Destroyer, Cruiser, Battleship, Command Carrier.
+          </p>
+          <div className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-4">
+            <div>
+              <div className="mb-1 text-xs uppercase tracking-[0.12em] text-pink-nebula-muted">Metal</div>
+              <input
+                type="text"
+                value={warshipMetal}
+                onChange={(e) => setWarshipMetal(e.target.value)}
+                placeholder="e.g. 5M"
+                className="w-full rounded-lg border border-cyan-300/20 bg-black/35 px-3 py-2 text-sm text-pink-nebula-text outline-none transition focus:border-cyan-300/60 focus:ring-1 focus:ring-cyan-300/20"
+              />
+            </div>
+            <div>
+              <div className="mb-1 text-xs uppercase tracking-[0.12em] text-pink-nebula-muted">Mineral</div>
+              <input
+                type="text"
+                value={warshipMineral}
+                onChange={(e) => setWarshipMineral(e.target.value)}
+                placeholder="e.g. 2M"
+                className="w-full rounded-lg border border-cyan-300/20 bg-black/35 px-3 py-2 text-sm text-pink-nebula-text outline-none transition focus:border-cyan-300/60 focus:ring-1 focus:ring-cyan-300/20"
+              />
+            </div>
+          </div>
+
+          {warshipOptimizer ? (
+            <div className="grid gap-4 md:grid-cols-2">
+              <WarshipResultPanel label="Highest Score" result={warshipOptimizer.highestScore} accent="text-amber-300" border="border-amber-400/30" />
+              <WarshipResultPanel label="Least Leftover" result={warshipOptimizer.leastLeftover} accent="text-emerald-300" border="border-emerald-400/30" />
+            </div>
+          ) : (
+            <div className="text-sm text-pink-nebula-muted">Enter a budget above to see recommendations.</div>
+          )}
+        </TableCard>
       </div>
     </main>
+  );
+}
+
+function WarshipResultPanel({ label, result, accent, border }: { label: string; result: WarshipBudgetResult; accent: string; border: string }) {
+  return (
+    <div className={`rounded-xl border ${border} bg-black/20 p-3`}>
+      <div className={`mb-3 text-xs font-semibold uppercase tracking-[0.18em] ${accent}`}>{label}</div>
+
+      {result.fleet.length === 0 ? (
+        <div className="text-sm text-pink-nebula-muted">Cannot afford any warship with this budget.</div>
+      ) : (
+        <>
+          <div className="mb-3 overflow-x-auto rounded-lg border border-white/10">
+            <table className="min-w-full text-xs">
+              <thead className="bg-black/30 text-pink-nebula-muted">
+                <tr>
+                  <th className="px-2 py-1 text-left">Ship</th>
+                  <th className="px-2 py-1 text-right">Count</th>
+                  <th className="px-2 py-1 text-right">Score</th>
+                </tr>
+              </thead>
+              <tbody>
+                {result.fleet.map((entry) => (
+                  <tr key={entry.id} className="border-t border-white/10">
+                    <td className="px-2 py-1">{entry.name}</td>
+                    <td className="px-2 py-1 text-right">{formatHumanNumber(entry.count)}</td>
+                    <td className="px-2 py-1 text-right">{formatHumanNumber(entry.scoreContrib)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2 text-xs">
+            <div className="rounded-lg border border-white/10 bg-black/20 p-2">
+              <div className="text-pink-nebula-muted">Total Score</div>
+              <div className={`font-semibold ${accent}`}>{formatHumanNumber(result.totalScore)}</div>
+            </div>
+            <div className="rounded-lg border border-white/10 bg-black/20 p-2">
+              <div className="text-pink-nebula-muted">Leftover (weighted)</div>
+              <div className="font-semibold text-pink-nebula-text">{formatHumanNumber(result.leftoverWeighted)}</div>
+            </div>
+            <div className="rounded-lg border border-white/10 bg-black/20 p-2">
+              <div className="text-pink-nebula-muted">Metal used / left</div>
+              <div className="font-semibold text-pink-nebula-text">{formatHumanNumber(result.usedMetal)} / {formatHumanNumber(result.leftoverMetal)}</div>
+            </div>
+            <div className="rounded-lg border border-white/10 bg-black/20 p-2">
+              <div className="text-pink-nebula-muted">Mineral used / left</div>
+              <div className="font-semibold text-pink-nebula-text">{formatHumanNumber(result.usedMineral)} / {formatHumanNumber(result.leftoverMineral)}</div>
+            </div>
+          </div>
+        </>
+      )}
+    </div>
   );
 }

@@ -960,6 +960,160 @@ export function fleetFromBudget(
   };
 }
 
+// ─── Warship Budget Optimizer ────────────────────────────────────────────────
+
+export const WARSHIP_IDS = [
+  'fighter', 'bomber', 'frigate', 'destroyer', 'cruiser', 'battleship', 'command_carrier',
+] as const;
+
+interface WarshipDef {
+  id: string;
+  name: string;
+  metal: number;
+  mineral: number;
+  score: number;
+}
+
+export interface WarshipFleetEntry {
+  id: string;
+  name: string;
+  count: number;
+  scoreContrib: number;
+}
+
+export interface WarshipBudgetResult {
+  fleet: WarshipFleetEntry[];
+  totalScore: number;
+  usedMetal: number;
+  usedMineral: number;
+  leftoverMetal: number;
+  leftoverMineral: number;
+  leftoverWeighted: number;
+}
+
+export interface WarshipOptimizerResult {
+  highestScore: WarshipBudgetResult;
+  leastLeftover: WarshipBudgetResult;
+}
+
+function greedyWarships(
+  budgetMetal: number,
+  budgetMineral: number,
+  ordered: WarshipDef[],
+  lookup: Record<string, WarshipDef>,
+): WarshipBudgetResult {
+  const counts: Record<string, number> = {};
+  let metalLeft = budgetMetal;
+  let mineralLeft = budgetMineral;
+
+  for (const ship of ordered) {
+    if (ship.metal <= 0 || ship.mineral <= 0) {
+      continue;
+    }
+    const n = Math.floor(Math.min(metalLeft / ship.metal, mineralLeft / ship.mineral));
+    if (n > 0) {
+      counts[ship.id] = (counts[ship.id] || 0) + n;
+      metalLeft -= n * ship.metal;
+      mineralLeft -= n * ship.mineral;
+    }
+  }
+
+  const fleet: WarshipFleetEntry[] = Object.entries(counts)
+    .filter(([, n]) => n > 0)
+    .map(([id, count]) => {
+      const def = lookup[id];
+      return { id, name: def?.name ?? id, count, scoreContrib: (def?.score ?? 0) * count };
+    })
+    .sort((a, b) => b.scoreContrib - a.scoreContrib);
+
+  const totalScore = fleet.reduce((sum, e) => sum + e.scoreContrib, 0);
+  const usedMetal = budgetMetal - metalLeft;
+  const usedMineral = budgetMineral - mineralLeft;
+
+  return {
+    fleet,
+    totalScore,
+    usedMetal,
+    usedMineral,
+    leftoverMetal: metalLeft,
+    leftoverMineral: mineralLeft,
+    leftoverWeighted: metalLeft + mineralLeft * 1.5,
+  };
+}
+
+export function optimizeWarships(
+  budgetMetal: number,
+  budgetMineral: number,
+  shipsById: Record<string, ShipDef>,
+): WarshipOptimizerResult {
+  const warships: WarshipDef[] = (WARSHIP_IDS as readonly string[])
+    .map((id) => {
+      const s = shipsById[id];
+      if (!s || s.costs.metal <= 0 || s.costs.mineral <= 0) {
+        return null;
+      }
+      return { id: s.id, name: s.name, metal: s.costs.metal, mineral: s.costs.mineral, score: s.scoreValue };
+    })
+    .filter((s): s is WarshipDef => s !== null);
+
+  const lookup: Record<string, WarshipDef> = warships.reduce<Record<string, WarshipDef>>((acc, s) => {
+    acc[s.id] = s;
+    return acc;
+  }, {});
+
+  const empty: WarshipBudgetResult = {
+    fleet: [],
+    totalScore: 0,
+    usedMetal: 0,
+    usedMineral: 0,
+    leftoverMetal: budgetMetal,
+    leftoverMineral: budgetMineral,
+    leftoverWeighted: budgetMetal + budgetMineral * 1.5,
+  };
+
+  if (!warships.length || (budgetMetal <= 0 && budgetMineral <= 0)) {
+    return { highestScore: empty, leastLeftover: empty };
+  }
+
+  // Highest score: greedy by score / weighted_cost descending
+  const byScoreEff = [...warships].sort((a, b) => {
+    const effA = a.score / (a.metal + a.mineral * 1.5);
+    const effB = b.score / (b.metal + b.mineral * 1.5);
+    return effB - effA;
+  });
+  const highestScore = greedyWarships(budgetMetal, budgetMineral, byScoreEff, lookup);
+
+  // Least leftover: try all singles, all ordered pairs, + two fixed orders
+  const candidates: WarshipBudgetResult[] = [highestScore];
+
+  for (const ship of warships) {
+    candidates.push(greedyWarships(budgetMetal, budgetMineral, [ship], lookup));
+  }
+
+  for (let i = 0; i < warships.length; i += 1) {
+    for (let j = 0; j < warships.length; j += 1) {
+      if (i === j) {
+        continue;
+      }
+      candidates.push(greedyWarships(budgetMetal, budgetMineral, [warships[i], warships[j]], lookup));
+    }
+  }
+
+  // Weighted cost descending (expensive first)
+  const byCostDesc = [...warships].sort((a, b) => (b.metal + b.mineral * 1.5) - (a.metal + a.mineral * 1.5));
+  candidates.push(greedyWarships(budgetMetal, budgetMineral, byCostDesc, lookup));
+
+  // Weighted cost ascending (cheapest first)
+  const byCostAsc = [...warships].sort((a, b) => (a.metal + a.mineral * 1.5) - (b.metal + b.mineral * 1.5));
+  candidates.push(greedyWarships(budgetMetal, budgetMineral, byCostAsc, lookup));
+
+  const leastLeftover = candidates.reduce((best, curr) =>
+    curr.leftoverWeighted < best.leftoverWeighted ? curr : best,
+  );
+
+  return { highestScore, leastLeftover };
+}
+
 export function projectAvailableResources(snapshot: ParsedSnapshot, ticks: number): Record<ResourceId, number> {
   const outputProjection: Record<ResourceId, number> = {
     metal: snapshot.resourcesOutput.metal * ticks,
