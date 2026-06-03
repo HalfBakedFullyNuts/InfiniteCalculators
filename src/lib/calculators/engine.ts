@@ -422,13 +422,79 @@ function inferPlayerName(raw: string): string {
   return tokens[tokens.length - 1];
 }
 
-function parseFleetScanUnits(block: string, shipNameToId: Record<string, string>): Record<string, number> {
-  const blockLines = block
-    .split('\n')
-    .map((line) => line.trim())
-    .filter(Boolean);
+const ARRIVING_RE = /^Arriving in\s+(\d+)\s+turns?$/i;
 
-  return parseCountLines(blockLines, shipNameToId);
+const FLEET_SCAN_STOP_WORDS = new Set([
+  'waiting and incoming fleets',
+  'rules',
+  'terms',
+  'privacy',
+]);
+
+function isFleetScanPlayerLine(line: string): boolean {
+  return PLAYER_ALLIANCE_RE.test(line);
+}
+
+function collectFleetShipLines(lines: string[], startIndex: number): { shipLines: string[]; endIndex: number } {
+  const shipLines: string[] = [];
+  let j = startIndex;
+  const limit = lines.length;
+
+  while (j < limit) {
+    const line = lines[j];
+    if (FLEET_SCAN_STOP_WORDS.has(line.toLowerCase())) break;
+    if (ARRIVING_RE.test(line)) break;
+    const nextIsArriving = j + 1 < limit && ARRIVING_RE.test(lines[j + 1]);
+    if (isFleetScanPlayerLine(line) && nextIsArriving) break;
+    shipLines.push(line);
+    j++;
+  }
+
+  return { shipLines, endIndex: j };
+}
+
+function parseFleetScanEntries(lines: string[], defs: GameDefs): FleetScanEntry[] {
+  const entries: FleetScanEntry[] = [];
+  let i = 0;
+
+  while (i < lines.length) {
+    const line = lines[i];
+
+    if (FLEET_SCAN_STOP_WORDS.has(line.toLowerCase())) { i++; continue; }
+
+    if (!isFleetScanPlayerLine(line) || i + 1 >= lines.length) { i++; continue; }
+
+    const arrivingMatch = lines[i + 1].match(ARRIVING_RE);
+    if (!arrivingMatch) { i++; continue; }
+
+    const playerMatch = line.match(PLAYER_ALLIANCE_RE)!;
+    const player = playerMatch[1].trim() || 'Unknown';
+    const alliance = playerMatch[2].trim() || 'Unknown';
+    const arrivalTurns = Number(arrivingMatch[1]);
+
+    // Fleet name: the line before this player line, if it's not a stop word, arrival line, or player line
+    let fleetName = player;
+    if (i > 0) {
+      const prev = lines[i - 1];
+      const prevIsStop = FLEET_SCAN_STOP_WORDS.has(prev.toLowerCase());
+      const prevIsArriving = ARRIVING_RE.test(prev);
+      const prevIsPlayer = isFleetScanPlayerLine(prev);
+      if (!prevIsStop && !prevIsArriving && !prevIsPlayer) {
+        fleetName = prev;
+      }
+    }
+
+    const { shipLines, endIndex } = collectFleetShipLines(lines, i + 2);
+    const units = parseCountLines(shipLines, defs.shipNameToId);
+
+    if (Object.keys(units).length > 0) {
+      entries.push({ fleetName, player, alliance, arrivalTurns: Number.isFinite(arrivalTurns) ? arrivalTurns : null, units });
+    }
+
+    i = endIndex;
+  }
+
+  return entries;
 }
 
 function aggregateFleetScan(
@@ -513,35 +579,12 @@ function aggregateFleetScan(
 export function parseFleetScanInput(rawInput: string, defs: GameDefs): FleetScanParseResult {
   const warnings: string[] = [];
   const text = normalizeFleetScanText(rawInput);
+  const lines = text.split('\n').map((l) => l.trim()).filter(Boolean);
 
-  const entryRx = /([^\n]{1,220}?)\s*\(([^)]+)\)\s*Arriving in(?:\s+(\d+))?\s*turns?([\s\S]*?)(?=(?:[^\n]{1,220}?\s*\([^)]+\)\s*Arriving in(?:\s+\d+)?\s*turns?)|Rules\s*Terms\s*Privacy|$)/gi;
-
-  const entries: FleetScanEntry[] = [];
-  let match = entryRx.exec(text);
-  while (match) {
-    const header = (match[1] || '').trim();
-    const alliance = (match[2] || '').trim() || 'Unknown';
-    const turns = match[3] ? Number(match[3]) : null;
-    const units = parseFleetScanUnits(match[4] || '', defs.shipNameToId);
-
-    const player = inferPlayerName(header);
-    const fleetName = header;
-
-    if (Object.keys(units).length > 0) {
-      entries.push({
-        fleetName,
-        player,
-        alliance,
-        arrivalTurns: Number.isFinite(turns as number) ? turns : null,
-        units,
-      });
-    }
-
-    match = entryRx.exec(text);
-  }
+  const entries = parseFleetScanEntries(lines, defs);
 
   if (entries.length === 0) {
-    warnings.push('No fleet scan entries were detected. Paste a larger block that includes player/alliance lines and unit counts.');
+    warnings.push('No fleet scan entries were detected. Paste the radar/fleet scan page — each fleet should have a "Player (Alliance)" line followed by "Arriving in N turns".');
   }
 
   const aggregates = aggregateFleetScan(entries, defs.shipsById);
