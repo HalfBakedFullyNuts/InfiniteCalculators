@@ -101,10 +101,14 @@ Arriving in 22 turns
 98 x Bomber
 18 x Frigate`;
 
-const DEFAULT_FLEET_OVERVIEW_INPUT = `Paste the Fleets overview table here.
+const DEFAULT_FLEET_OVERVIEW_INPUT = `Paste the Fleets page table here.
 
-Best input is a table copy with tabs:
-Name    Status    Route    Metal    Mineral    Food    Energy    Worker    Soldier    ETA`;
+IMPORTANT — use tab copy for accurate soldiers/workers:
+Select just the fleet table rows (not Ctrl+A the whole page), then paste.
+Tab-preserved copy keeps column positions so soldiers land in the right column.
+
+Tab format (10 columns):
+Name\tStatus\tRoute\tMetal\tMineral\tFood\tEnergy\tWorker\tSoldier\tETA`;
 
 const DEFAULT_COMBAT_SCAN_INPUT = `Paste a combat/battle report here.
 
@@ -1110,6 +1114,9 @@ export default function CalculatorsPage() {
         </TableCard>
 
         <TableCard id="fleet-overview" title="7) Fleet Overview ETA Cargo">
+          <p className="mb-2 text-xs text-amber-200/80">
+            <span className="font-semibold">Soldiers/workers accuracy:</span> Ctrl+A plain-text copies drop empty cargo cells and shift columns — soldiers land in the Metal column. For correct results, select just the fleet table rows in-browser so the paste preserves tab column alignment.
+          </p>
           <textarea
             value={fleetOverviewInput}
             onChange={(event) => {

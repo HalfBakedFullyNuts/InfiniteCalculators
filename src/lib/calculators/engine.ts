@@ -844,7 +844,7 @@ function parseFleetOverviewLineRows(rawInput: string, warnings: string[]): Fleet
     .filter(Boolean);
   const entries: FleetOverviewEntry[] = [];
   const statuses = new Set(['Moving', 'Waiting']);
-  let usedAmbiguousCargo = false;
+  const sparseFleets: string[] = [];
 
   for (let index = 1; index < lines.length; index += 1) {
     const status = lines[index];
@@ -883,8 +883,10 @@ function parseFleetOverviewLineRows(rawInput: string, warnings: string[]): Fleet
       cursor += 1;
     }
 
-    if (cargoTokens.length > 0 && cargoTokens.length < FLEET_CARGO_ORDER.length) {
-      usedAmbiguousCargo = true;
+    // Fewer than 4 values means empty cargo columns were dropped by the plain-text copy.
+    // Workers and Soldiers are the last columns and most likely to be shifted left.
+    if (cargoTokens.length > 0 && cargoTokens.length < 4) {
+      sparseFleets.push(fleetName);
     }
 
     const cargo = cargoFromCompactTokens(cargoTokens);
@@ -901,8 +903,12 @@ function parseFleetOverviewLineRows(rawInput: string, warnings: string[]): Fleet
     });
   }
 
-  if (usedAmbiguousCargo) {
-    warnings.push('Plain-text page copies can drop empty cargo cells. Rows without tabs were mapped left-to-right across Metal, Mineral, Food, Energy, Worker, Soldier.');
+  if (sparseFleets.length > 0) {
+    warnings.push(
+      `Plain-text copy dropped empty cargo columns — soldiers/workers may be wrong for: ${sparseFleets.join(', ')}. `
+      + 'Fix: select the fleet table in-browser and paste with tab columns preserved (not Ctrl+A whole page). '
+      + 'Tab format keeps column positions so soldiers land in the Soldier column instead of Metal.',
+    );
   }
 
   return entries;
