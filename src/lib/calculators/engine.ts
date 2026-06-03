@@ -48,6 +48,73 @@ export interface ParsedSnapshot {
   warnings: string[];
 }
 
+export interface FleetScanEntry {
+  fleetName: string;
+  player: string;
+  alliance: string;
+  arrivalTurns: number | null;
+  units: Record<string, number>;
+}
+
+export interface FleetScanSummary {
+  label: string;
+  fleets: number;
+  units: Record<string, number>;
+  totalUnits: number;
+  totalScoreValue: number;
+  totalCost: Record<ResourceId, number>;
+  alliances?: string[];
+}
+
+export interface FleetScanParseResult {
+  entries: FleetScanEntry[];
+  byPlayer: FleetScanSummary[];
+  byAlliance: FleetScanSummary[];
+  warnings: string[];
+}
+
+export type FleetCargoId = ResourceId | 'workers' | 'soldiers';
+
+export interface FleetCargoLoad {
+  metal: number;
+  mineral: number;
+  food: number;
+  energy: number;
+  workers: number;
+  soldiers: number;
+}
+
+export interface FleetOverviewEntry {
+  fleetName: string;
+  status: string;
+  originName: string;
+  originCoords: string;
+  destinationName: string;
+  destinationCoords: string;
+  etaTurns: number | null;
+  cargo: FleetCargoLoad;
+  isNonEmpty: boolean;
+}
+
+export interface FleetOverviewCumulativeRow {
+  etaTurns: number;
+  arrivingFleets: number;
+  cumulative: FleetCargoLoad;
+}
+
+export interface FleetOverviewDestinationSummary {
+  destinationName: string;
+  destinationCoords: string;
+  fleets: number;
+  rows: FleetOverviewCumulativeRow[];
+}
+
+export interface FleetOverviewParseResult {
+  entries: FleetOverviewEntry[];
+  destinations: FleetOverviewDestinationSummary[];
+  warnings: string[];
+}
+
 export interface GameDefs {
   shipsById: Record<string, ShipDef>;
   shipsByName: Record<string, ShipDef>;
@@ -143,6 +210,16 @@ const BASE_RESOURCES: Record<ResourceId, number> = {
 };
 
 const RESOURCE_ORDER: ResourceId[] = ['metal', 'mineral', 'food', 'energy'];
+export const FLEET_CARGO_ORDER: FleetCargoId[] = ['metal', 'mineral', 'food', 'energy', 'workers', 'soldiers'];
+
+const BASE_FLEET_CARGO: FleetCargoLoad = {
+  metal: 0,
+  mineral: 0,
+  food: 0,
+  energy: 0,
+  workers: 0,
+  soldiers: 0,
+};
 
 const ANSI_RE = /\u001b\[[0-9;]*m/g;
 
@@ -297,6 +374,617 @@ function parseCountLines(
   }
 
   return out;
+}
+
+function normalizeFleetScanText(rawInput: string): string {
+  const withoutAnsi = rawInput.replace(ANSI_RE, '');
+  let text = withoutAnsi.replace(/\u00a0/g, ' ').replace(/\r/g, '\n');
+
+  // Some full-page copies collapse line breaks and glue words together.
+  text = text.replace(/([a-z])([A-Z])/g, '$1 $2');
+  text = text.replace(/(\d[\d,]*)\s*[x×]\s*/g, '\n$1 x ');
+  text = text.replace(/[ \t]{2,}/g, ' ');
+
+  return text;
+}
+
+function inferPlayerName(raw: string): string {
+  const normalized = raw.replace(/\s+/g, ' ').trim();
+  if (!normalized) {
+    return 'Unknown';
+  }
+
+  const tokens = normalized.split(' ').filter(Boolean);
+  const last = tokens[tokens.length - 1] || '';
+  if (tokens.length > 1 && /^[a-z_]/.test(last)) {
+    return last;
+  }
+
+  if (
+    tokens.length >= 4
+    && /^[a-z]/.test(tokens[tokens.length - 3] || '')
+    && /^[A-Z_]/.test(tokens[tokens.length - 2] || '')
+  ) {
+    return tokens.slice(-2).join(' ');
+  }
+
+  if (tokens.length <= 3) {
+    return normalized;
+  }
+
+  for (let take = Math.min(4, tokens.length); take >= 1; take -= 1) {
+    const candidate = tokens.slice(tokens.length - take).join(' ');
+    if (/^[A-Z_]/.test(candidate)) {
+      return candidate;
+    }
+  }
+
+  return tokens[tokens.length - 1];
+}
+
+function parseFleetScanUnits(block: string, shipNameToId: Record<string, string>): Record<string, number> {
+  const blockLines = block
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  return parseCountLines(blockLines, shipNameToId);
+}
+
+function aggregateFleetScan(
+  entries: FleetScanEntry[],
+  shipsById: Record<string, ShipDef>,
+): { byPlayer: FleetScanSummary[]; byAlliance: FleetScanSummary[] } {
+  type Accumulator = {
+    label: string;
+    fleets: number;
+    units: Record<string, number>;
+    totalUnits: number;
+    totalScoreValue: number;
+    totalCost: Record<ResourceId, number>;
+    alliances: Set<string>;
+  };
+
+  const byPlayer = new Map<string, Accumulator>();
+  const byAlliance = new Map<string, Accumulator>();
+
+  const addEntry = (map: Map<string, Accumulator>, key: string, alliance: string, units: Record<string, number>): void => {
+    const existing = map.get(key) || {
+      label: key,
+      fleets: 0,
+      units: {},
+      totalUnits: 0,
+      totalScoreValue: 0,
+      totalCost: { ...BASE_RESOURCES },
+      alliances: new Set<string>(),
+    };
+
+    existing.fleets += 1;
+    existing.alliances.add(alliance);
+
+    for (const [id, count] of Object.entries(units)) {
+      const safeCount = Math.max(0, Math.floor(count));
+      if (safeCount <= 0) {
+        continue;
+      }
+
+      existing.units[id] = (existing.units[id] || 0) + safeCount;
+      existing.totalUnits += safeCount;
+
+      const ship = shipsById[id];
+      if (!ship) {
+        continue;
+      }
+
+      existing.totalScoreValue += ship.scoreValue * safeCount;
+      existing.totalCost.metal += ship.costs.metal * safeCount;
+      existing.totalCost.mineral += ship.costs.mineral * safeCount;
+      existing.totalCost.food += ship.costs.food * safeCount;
+      existing.totalCost.energy += ship.costs.energy * safeCount;
+    }
+
+    map.set(key, existing);
+  };
+
+  for (const entry of entries) {
+    addEntry(byPlayer, entry.player, entry.alliance, entry.units);
+    addEntry(byAlliance, entry.alliance, entry.alliance, entry.units);
+  }
+
+  const toSortedArray = (map: Map<string, Accumulator>, includeAlliances: boolean): FleetScanSummary[] =>
+    Array.from(map.values())
+      .map((entry) => ({
+        label: entry.label,
+        fleets: entry.fleets,
+        units: entry.units,
+        totalUnits: entry.totalUnits,
+        totalScoreValue: entry.totalScoreValue,
+        totalCost: entry.totalCost,
+        alliances: includeAlliances ? Array.from(entry.alliances).sort((a, b) => a.localeCompare(b)) : undefined,
+      }))
+      .sort((a, b) => b.totalUnits - a.totalUnits || a.label.localeCompare(b.label));
+
+  return {
+    byPlayer: toSortedArray(byPlayer, true),
+    byAlliance: toSortedArray(byAlliance, false),
+  };
+}
+
+export function parseFleetScanInput(rawInput: string, defs: GameDefs): FleetScanParseResult {
+  const warnings: string[] = [];
+  const text = normalizeFleetScanText(rawInput);
+
+  const entryRx = /([^\n]{1,220}?)\s*\(([^)]+)\)\s*Arriving in(?:\s+(\d+))?\s*turns?([\s\S]*?)(?=(?:[^\n]{1,220}?\s*\([^)]+\)\s*Arriving in(?:\s+\d+)?\s*turns?)|Rules\s*Terms\s*Privacy|$)/gi;
+
+  const entries: FleetScanEntry[] = [];
+  let match = entryRx.exec(text);
+  while (match) {
+    const header = (match[1] || '').trim();
+    const alliance = (match[2] || '').trim() || 'Unknown';
+    const turns = match[3] ? Number(match[3]) : null;
+    const units = parseFleetScanUnits(match[4] || '', defs.shipNameToId);
+
+    const player = inferPlayerName(header);
+    const fleetName = header;
+
+    if (Object.keys(units).length > 0) {
+      entries.push({
+        fleetName,
+        player,
+        alliance,
+        arrivalTurns: Number.isFinite(turns as number) ? turns : null,
+        units,
+      });
+    }
+
+    match = entryRx.exec(text);
+  }
+
+  if (entries.length === 0) {
+    warnings.push('No fleet scan entries were detected. Paste a larger block that includes player/alliance lines and unit counts.');
+  }
+
+  const aggregates = aggregateFleetScan(entries, defs.shipsById);
+
+  return {
+    entries,
+    byPlayer: aggregates.byPlayer,
+    byAlliance: aggregates.byAlliance,
+    warnings,
+  };
+}
+
+function idLabelShort(id: string): string {
+  const parts = id.split('_');
+  if (parts.length > 1) {
+    return parts.map((part) => part.charAt(0).toUpperCase()).join('');
+  }
+
+  return `${id.charAt(0).toUpperCase()}${id.slice(1, 3)}`;
+}
+
+function fitTableCell(value: string, width: number): string {
+  const clean = value.replace(/\s+/g, ' ').trim();
+  if (clean.length <= width) {
+    return clean;
+  }
+
+  return `${clean.slice(0, Math.max(1, width - 1))}~`;
+}
+
+function leftTableCell(value: string, width: number): string {
+  return fitTableCell(value, width).padEnd(width, ' ');
+}
+
+function rightTableCell(value: string, width: number): string {
+  return fitTableCell(value, width).padStart(width, ' ');
+}
+
+function tableDivider(widths: number[]): string {
+  return widths.map((width) => '-'.repeat(width)).join('  ');
+}
+
+function fleetScanTableRow(
+  row: FleetScanSummary,
+  shipIds: string[],
+  widths: number[],
+): string {
+  const cells = [
+    leftTableCell(row.label, widths[0]),
+    rightTableCell(String(row.fleets), widths[1]),
+    rightTableCell(formatHumanNumber(row.totalUnits), widths[2]),
+    rightTableCell(formatHumanNumber(row.totalScoreValue), widths[3]),
+  ];
+
+  shipIds.forEach((id, index) => {
+    cells.push(rightTableCell(formatHumanNumber(row.units[id] || 0), widths[4 + index]));
+  });
+
+  return cells.join('  ');
+}
+
+function fleetScanTable(
+  title: string,
+  nameHeader: string,
+  rows: FleetScanSummary[],
+  shipIds: string[],
+  maxNameWidth: number,
+): string[] {
+  const labels = shipIds.map(idLabelShort);
+  const widths = [
+    Math.min(maxNameWidth, Math.max(nameHeader.length, ...rows.map((row) => row.label.length))),
+    Math.max(3, ...rows.map((row) => String(row.fleets).length)),
+    Math.max(5, ...rows.map((row) => formatHumanNumber(row.totalUnits).length)),
+    Math.max(5, ...rows.map((row) => formatHumanNumber(row.totalScoreValue).length)),
+    ...labels.map((label, index) => Math.max(label.length, ...rows.map((row) => formatHumanNumber(row.units[shipIds[index]] || 0).length))),
+  ];
+  const header = [
+    leftTableCell(nameHeader, widths[0]),
+    rightTableCell('Flt', widths[1]),
+    rightTableCell('Units', widths[2]),
+    rightTableCell('Score', widths[3]),
+    ...labels.map((label, index) => rightTableCell(label, widths[4 + index])),
+  ].join('  ');
+
+  return [
+    title,
+    header,
+    tableDivider(widths),
+    ...rows.map((row) => fleetScanTableRow(row, shipIds, widths)),
+  ];
+}
+
+export function formatFleetScanAsDiscord(result: FleetScanParseResult, shipIds: string[]): string {
+  if (result.entries.length === 0) {
+    return '';
+  }
+
+  const totalScore = result.byAlliance.reduce((sum, row) => sum + row.totalScoreValue, 0);
+  const totalUnits = result.byAlliance.reduce((sum, row) => sum + row.totalUnits, 0);
+  const bodyLines = [
+    'Fleet Scan Summary',
+    `Fleets ${result.entries.length} | Players ${result.byPlayer.length} | Alliances ${result.byAlliance.length} | Units ${formatHumanNumber(totalUnits)} | Score ${formatHumanNumber(totalScore)}`,
+    '',
+    ...fleetScanTable('By Alliance', 'Alliance', result.byAlliance, shipIds, 24),
+    '',
+    ...fleetScanTable('By Player', 'Player', result.byPlayer, shipIds, 22),
+  ];
+
+  return `\`\`\`\n${bodyLines.join('\n').trim()}\n\`\`\``;
+}
+
+function emptyFleetCargo(): FleetCargoLoad {
+  return { ...BASE_FLEET_CARGO };
+}
+
+function parseEtaToken(token: string): number | null {
+  const match = token.trim().match(/^(\d+)t$/i);
+  return match ? Number(match[1]) : null;
+}
+
+function looksLikeCargoToken(token: string): boolean {
+  return /^-?\d[\d,.]*(?:[KMB])?$/i.test(token.trim());
+}
+
+function parseCargoToken(token: string): number {
+  return Math.max(0, Math.floor(parseHumanNumber(token.replace(/\s+/g, ''))));
+}
+
+function hasLoadedCargo(cargo: FleetCargoLoad): boolean {
+  return cargo.metal > 0
+    || cargo.mineral > 0
+    || cargo.food > 0
+    || cargo.energy > 0
+    || cargo.soldiers > 0;
+}
+
+function addCargo(target: FleetCargoLoad, source: FleetCargoLoad): void {
+  for (const id of FLEET_CARGO_ORDER) {
+    target[id] += source[id];
+  }
+}
+
+function cargoFromCells(cells: string[]): FleetCargoLoad {
+  const cargo = emptyFleetCargo();
+  FLEET_CARGO_ORDER.forEach((id, index) => {
+    const cell = cells[index]?.trim() || '';
+    cargo[id] = cell ? parseCargoToken(cell) : 0;
+  });
+  return cargo;
+}
+
+function cargoFromCompactTokens(tokens: string[]): FleetCargoLoad {
+  const cargo = emptyFleetCargo();
+  tokens.slice(0, FLEET_CARGO_ORDER.length).forEach((token, index) => {
+    cargo[FLEET_CARGO_ORDER[index]] = parseCargoToken(token);
+  });
+  return cargo;
+}
+
+function splitPlaceAndCoords(raw: string): { name: string; coords: string } {
+  const match = raw.match(/^(.*?)(\d+:\d+:\d+)$/);
+  if (!match) {
+    return { name: raw.trim(), coords: '' };
+  }
+
+  return {
+    name: match[1].trim(),
+    coords: match[2],
+  };
+}
+
+function parseRouteCell(route: string): {
+  originName: string;
+  originCoords: string;
+  destinationName: string;
+  destinationCoords: string;
+} {
+  const [originRaw, destinationRaw = ''] = route.split('→').map((part) => part.trim());
+  const origin = splitPlaceAndCoords(originRaw);
+  const destination = splitPlaceAndCoords(destinationRaw);
+  return {
+    originName: origin.name,
+    originCoords: origin.coords,
+    destinationName: destination.name || origin.name,
+    destinationCoords: destination.coords || origin.coords,
+  };
+}
+
+function parseFleetOverviewTableRows(rawInput: string): FleetOverviewEntry[] {
+  const rows = rawInput
+    .replace(ANSI_RE, '')
+    .replace(/\r/g, '\n')
+    .split('\n')
+    .map((line) => line.trimEnd())
+    .filter((line) => line.includes('\t'));
+  const entries: FleetOverviewEntry[] = [];
+
+  for (const row of rows) {
+    const cells = row.split('\t').map((cell) => cell.trim());
+    if (cells.length < 10 || safeLower(cells[0]) === 'name') {
+      continue;
+    }
+
+    const route = parseRouteCell(cells[2] || '');
+    const etaTurns = parseEtaToken(cells[9] || '');
+    const cargo = cargoFromCells(cells.slice(3, 9));
+    entries.push({
+      fleetName: cells[0] || 'Unknown fleet',
+      status: cells[1] || 'Unknown',
+      ...route,
+      etaTurns,
+      cargo,
+      isNonEmpty: hasLoadedCargo(cargo),
+    });
+  }
+
+  return entries;
+}
+
+function readFleetOverviewPlace(lines: string[], startIndex: number): {
+  name: string;
+  coords: string;
+  nextIndex: number;
+} {
+  const parts: string[] = [];
+  let index = startIndex;
+  while (index < lines.length) {
+    const line = lines[index];
+    const coordMatch = line.match(/(.*?)(\d+:\d+:\d+)$/);
+    if (coordMatch) {
+      const name = [...parts, coordMatch[1].trim()].filter(Boolean).join(' ').trim();
+      return {
+        name,
+        coords: coordMatch[2],
+        nextIndex: index + 1,
+      };
+    }
+
+    parts.push(line);
+    index += 1;
+  }
+
+  return {
+    name: parts.join(' ').trim(),
+    coords: '',
+    nextIndex: index,
+  };
+}
+
+function parseFleetOverviewLineRows(rawInput: string, warnings: string[]): FleetOverviewEntry[] {
+  const lines = rawInput
+    .replace(ANSI_RE, '')
+    .replace(/\u00a0/g, ' ')
+    .replace(/\r/g, '\n')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const entries: FleetOverviewEntry[] = [];
+  const statuses = new Set(['Moving', 'Waiting']);
+  let usedAmbiguousCargo = false;
+
+  for (let index = 1; index < lines.length; index += 1) {
+    const status = lines[index];
+    if (!statuses.has(status)) {
+      continue;
+    }
+
+    const fleetName = lines[index - 1];
+    let cursor = index + 1;
+    const origin = readFleetOverviewPlace(lines, cursor);
+    cursor = origin.nextIndex;
+
+    let destination = origin;
+    if (lines[cursor] === '→') {
+      destination = readFleetOverviewPlace(lines, cursor + 1);
+      cursor = destination.nextIndex;
+    }
+
+    const cargoTokens: string[] = [];
+    let etaTurns: number | null = null;
+    while (cursor < lines.length) {
+      if (cursor + 1 < lines.length && statuses.has(lines[cursor + 1])) {
+        break;
+      }
+
+      const eta = parseEtaToken(lines[cursor]);
+      if (eta !== null) {
+        etaTurns = eta;
+        cursor += 1;
+        break;
+      }
+
+      if (looksLikeCargoToken(lines[cursor])) {
+        cargoTokens.push(lines[cursor]);
+      }
+      cursor += 1;
+    }
+
+    if (cargoTokens.length > 0 && cargoTokens.length < FLEET_CARGO_ORDER.length) {
+      usedAmbiguousCargo = true;
+    }
+
+    const cargo = cargoFromCompactTokens(cargoTokens);
+    entries.push({
+      fleetName,
+      status,
+      originName: origin.name,
+      originCoords: origin.coords,
+      destinationName: destination.name || origin.name,
+      destinationCoords: destination.coords || origin.coords,
+      etaTurns,
+      cargo,
+      isNonEmpty: hasLoadedCargo(cargo),
+    });
+  }
+
+  if (usedAmbiguousCargo) {
+    warnings.push('Plain-text page copies can drop empty cargo cells. Rows without tabs were mapped left-to-right across Metal, Mineral, Food, Energy, Worker, Soldier.');
+  }
+
+  return entries;
+}
+
+function buildFleetOverviewDestinations(entries: FleetOverviewEntry[]): FleetOverviewDestinationSummary[] {
+  const byDestination = new Map<string, FleetOverviewEntry[]>();
+  for (const entry of entries) {
+    if (entry.etaTurns === null || !entry.isNonEmpty) {
+      continue;
+    }
+
+    const key = `${entry.destinationCoords || 'unknown'}|${entry.destinationName || 'Unknown'}`;
+    const existing = byDestination.get(key) || [];
+    existing.push(entry);
+    byDestination.set(key, existing);
+  }
+
+  return Array.from(byDestination.values())
+    .map((destinationEntries) => {
+      const first = destinationEntries[0];
+      const byEta = new Map<number, { fleets: number; cargo: FleetCargoLoad }>();
+      for (const entry of destinationEntries) {
+        const existing = byEta.get(entry.etaTurns as number) || { fleets: 0, cargo: emptyFleetCargo() };
+        existing.fleets += 1;
+        addCargo(existing.cargo, entry.cargo);
+        byEta.set(entry.etaTurns as number, existing);
+      }
+
+      const cumulative = emptyFleetCargo();
+      const rows = Array.from(byEta.entries())
+        .sort(([a], [b]) => a - b)
+        .map(([etaTurns, value]) => {
+          addCargo(cumulative, value.cargo);
+          return {
+            etaTurns,
+            arrivingFleets: value.fleets,
+            cumulative: { ...cumulative },
+          };
+        });
+
+      return {
+        destinationName: first.destinationName || 'Unknown',
+        destinationCoords: first.destinationCoords,
+        fleets: destinationEntries.length,
+        rows,
+      };
+    })
+    .sort((a, b) => (a.rows[0]?.etaTurns || 0) - (b.rows[0]?.etaTurns || 0) || a.destinationName.localeCompare(b.destinationName));
+}
+
+export function parseFleetOverviewInput(rawInput: string): FleetOverviewParseResult {
+  const warnings: string[] = [];
+  let entries = parseFleetOverviewTableRows(rawInput);
+
+  if (entries.length === 0) {
+    entries = parseFleetOverviewLineRows(rawInput, warnings);
+  }
+
+  if (entries.length === 0) {
+    warnings.push('No fleet overview rows were detected. Paste the Fleets page table including Status, Route, cargo, and ETA columns.');
+  }
+
+  return {
+    entries,
+    destinations: buildFleetOverviewDestinations(entries),
+    warnings,
+  };
+}
+
+function fleetCargoLabel(id: FleetCargoId): string {
+  if (id === 'workers') {
+    return 'Worker';
+  }
+  if (id === 'soldiers') {
+    return 'Soldier';
+  }
+  return id.charAt(0).toUpperCase() + id.slice(1);
+}
+
+function fleetOverviewDiscordRows(destination: FleetOverviewDestinationSummary): string[] {
+  const widths = [
+    4,
+    Math.max(3, ...destination.rows.map((row) => String(row.arrivingFleets).length)),
+    ...FLEET_CARGO_ORDER.map((id) => Math.max(
+      fleetCargoLabel(id).length,
+      ...destination.rows.map((row) => formatHumanNumber(row.cumulative[id]).length),
+    )),
+  ];
+  const header = [
+    leftTableCell('ETA', widths[0]),
+    rightTableCell('Arr', widths[1]),
+    ...FLEET_CARGO_ORDER.map((id, index) => rightTableCell(fleetCargoLabel(id), widths[index + 2])),
+  ].join('  ');
+  const rows = destination.rows.map((row) => [
+    leftTableCell(`${row.etaTurns}t`, widths[0]),
+    rightTableCell(String(row.arrivingFleets), widths[1]),
+    ...FLEET_CARGO_ORDER.map((id, index) => rightTableCell(formatHumanNumber(row.cumulative[id]), widths[index + 2])),
+  ].join('  '));
+
+  return [
+    `${destination.destinationName || 'Unknown destination'} ${destination.destinationCoords || ''}`.trim(),
+    header,
+    tableDivider(widths),
+    ...rows,
+  ];
+}
+
+export function formatFleetOverviewAsDiscord(result: FleetOverviewParseResult): string {
+  if (result.destinations.length === 0) {
+    return '';
+  }
+
+  const totalFleets = result.destinations.reduce((sum, row) => sum + row.fleets, 0);
+  const bodyLines = [
+    'Fleet Overview ETA Cargo',
+    `Destinations ${result.destinations.length} | Loaded fleets ${totalFleets}`,
+    '',
+    ...result.destinations.flatMap((destination, index) => {
+      const lines = fleetOverviewDiscordRows(destination);
+      return index === 0 ? lines : ['', ...lines];
+    }),
+  ];
+
+  return `\`\`\`\n${bodyLines.join('\n').trim()}\n\`\`\``;
 }
 
 export function buildGameDefs(gameData: any): GameDefs {
@@ -602,6 +1290,50 @@ export function calculateCargoPlan(snapshot: ParsedSnapshot, cargoShips: CargoSh
   return best;
 }
 
+export interface FreighterRoundTripRow {
+  resource: ResourceId;
+  label: string;
+  perTick: number;
+  cap: number;
+  freighters: number[];
+}
+
+export interface FreighterRoundTripResult {
+  tripOneTimes: number[];
+  rows: FreighterRoundTripRow[];
+  totals: number[];
+}
+
+const FREIGHTER_CAPS: Record<ResourceId, number> = {
+  metal: 120_000,
+  mineral: 80_000,
+  food: 40_000,
+  energy: 40_000,
+};
+
+const RESOURCE_LABELS: Record<ResourceId, string> = {
+  metal: 'Metal',
+  mineral: 'Mineral',
+  food: 'Food',
+  energy: 'Energy',
+};
+
+export function calculateFreighterRoundTrip(
+  output: Record<ResourceId, number>,
+  tripOneTimes: number[],
+): FreighterRoundTripResult {
+  const rows: FreighterRoundTripRow[] = RESOURCE_ORDER.map((res) => {
+    const perTick = Math.max(0, output[res] ?? 0);
+    const cap = FREIGHTER_CAPS[res];
+    const freighters = tripOneTimes.map((t) => (perTick > 0 ? Math.ceil((perTick * t * 2) / cap) : 0));
+    return { resource: res, label: RESOURCE_LABELS[res], perTick, cap, freighters };
+  });
+
+  const totals = tripOneTimes.map((_, i) => Math.max(...rows.map((r) => r.freighters[i])));
+
+  return { tripOneTimes, rows, totals };
+}
+
 export function parseRatioInput(ratioInput: string, nameToId: Record<string, string>): Record<string, number> {
   const normalized = ratioInput
     .split(/[\n,]/)
@@ -790,6 +1522,202 @@ function computeBuildingOutputDelta(def: BuildingDef, abundance: Record<Resource
   return out;
 }
 
+// ─── Formula Build Recommendation ───────────────────────────────────────────
+// Direct algebraic recommendation: no greedy iteration needed.
+//
+// Key equivalences at any tier (derived from net weighted output):
+//   Metal Mine vs Mineral Extractor → compare metal% vs mineral% (same formula 3×abund − upkeep)
+//   Hydroponics Dome vs Solar Station → food wins when food% > energy% + 2
+//   Hydroponics Lab vs Solar Array   → food wins when food% > energy% + 6.67
+//   T1 ground 4-way: rank by (base × abund × resource_score − energy_upkeep×2)
+
+export interface FormulaBuildGroup {
+  buildingId: string;
+  buildingName: string;
+  count: number;
+  scoreDelta: number;
+  outputDelta: Record<ResourceId, number>;
+  workerCost: number;
+  spaceCost: number;
+  spaceType: 'ground' | 'orbital';
+}
+
+export interface FormulaBuildResult {
+  groups: FormulaBuildGroup[];
+  totalScoreDelta: number;
+  totalOutputDelta: Record<ResourceId, number>;
+  groundSpaceUsed: number;
+  orbitalSpaceUsed: number;
+  workersUsed: number;
+  groundSpaceRemaining: number;
+  orbitalSpaceRemaining: number;
+  workersRemaining: number;
+  groundReason: string;
+  orbitalT2Reason: string;
+  orbitalT3Reason: string;
+}
+
+function makeBuildGroup(
+  def: BuildingDef,
+  count: number,
+  abundance: Record<ResourceId, number>,
+  spaceType: 'ground' | 'orbital',
+): FormulaBuildGroup {
+  const perBuilding = computeBuildingOutputDelta(def, abundance);
+  const outputDelta: Record<ResourceId, number> = { ...BASE_RESOURCES };
+  for (const r of RESOURCE_ORDER) {
+    outputDelta[r] = (perBuilding[r] || 0) * count;
+  }
+  return {
+    buildingId: def.id,
+    buildingName: def.name,
+    count,
+    scoreDelta: def.scoreValue * count,
+    outputDelta,
+    workerCost: def.workerCost * count,
+    spaceCost: (spaceType === 'ground' ? def.groundSpaceCost : def.orbitalSpaceCost) * count,
+    spaceType,
+  };
+}
+
+export function formulaBuildRecommendation(
+  snapshot: ParsedSnapshot,
+  structuresById: Record<string, BuildingDef>,
+): FormulaBuildResult {
+  const built = snapshot.structures;
+  const abund = snapshot.abundance;
+  const m = abund.metal ?? 100;
+  const n = abund.mineral ?? 100;
+  const f = abund.food ?? 100;
+  const e = abund.energy ?? 100;
+
+  let groundFree = Math.max(0, snapshot.groundSpaceFree ?? 0);
+  let orbitalFree = Math.max(0, snapshot.orbitalSpaceFree ?? 0);
+  let workersFree = Math.max(0, snapshot.workersFree ?? 0);
+
+  const hasOutpost = (built['outpost'] || 0) > 0;
+  const hasColony = (built['colony'] || 0) > 0;
+  const hasMetropolis = (built['metropolis'] || 0) > 0;
+  const hasLaunchSite = (built['launch_site'] || 0) > 0;
+
+  // Formula reasoning strings
+  const groundReason = m >= n
+    ? `Metal ${m.toFixed(0)}% ≥ Mineral ${n.toFixed(0)}% → Metal buildings`
+    : `Mineral ${n.toFixed(0)}% > Metal ${m.toFixed(0)}% → Mineral buildings`;
+
+  const orbT2Threshold = 40 / 6;
+  const orbT2Reason = f >= e + orbT2Threshold
+    ? `Food ${f.toFixed(0)}% > Energy ${e.toFixed(0)}%+${orbT2Threshold.toFixed(1)}% → Hydroponics Lab`
+    : `Food ${f.toFixed(0)}% ≤ Energy ${e.toFixed(0)}%+${orbT2Threshold.toFixed(1)}% → Solar Array`;
+
+  const orbT3Threshold = 120 / 60;
+  const orbT3Reason = f >= e + orbT3Threshold
+    ? `Food ${f.toFixed(0)}% > Energy ${e.toFixed(0)}%+${orbT3Threshold.toFixed(1)}% → Hydroponics Dome`
+    : `Food ${f.toFixed(0)}% ≤ Energy ${e.toFixed(0)}%+${orbT3Threshold.toFixed(1)}% → Solar Station`;
+
+  const groups: FormulaBuildGroup[] = [];
+
+  function tryAdd(id: string, spaceCost: number, workerCost: number, spaceLeft: number, spaceType: 'ground' | 'orbital'): number {
+    const def = structuresById[id];
+    if (!def || spaceCost <= 0 || workerCost < 0) {
+      return 0;
+    }
+    const bySpace = Math.floor(spaceLeft / spaceCost);
+    const byWorker = workerCost > 0 ? Math.floor(workersFree / workerCost) : bySpace;
+    const count = Math.min(bySpace, byWorker);
+    if (count <= 0) {
+      return 0;
+    }
+    groups.push(makeBuildGroup(def, count, abund, spaceType));
+    workersFree -= workerCost * count;
+    return count;
+  }
+
+  // ── Ground space: T3 → T2 → T1 ──────────────────────────────────────────
+  if (hasMetropolis) {
+    const id = m >= n ? 'strip_metal_mine' : 'strip_mineral_extractor';
+    const built_ = tryAdd(id, 6, 200_000, groundFree, 'ground');
+    groundFree -= built_ * 6;
+  }
+
+  if (hasColony) {
+    const id = m >= n ? 'core_metal_mine' : 'core_mineral_extractor';
+    const built_ = tryAdd(id, 2, 40_000, groundFree, 'ground');
+    groundFree -= built_ * 2;
+  }
+
+  if (hasOutpost && groundFree > 0) {
+    // Rank T1 options by net weighted output at current abundances
+    // Metal mine: 300*m/100*1 − 10*2 = 3m − 20
+    // Mineral extractor: 200*n/100*1.5 − 10*2 = 3n − 20
+    // Solar generator: 100*e/100*2 − 0 = 2e
+    // Farm: 100*f/100*2 − 10*2 = 2f − 20
+    const t1Options: Array<{ id: string; net: number }> = [
+      { id: 'metal_mine', net: 3 * m - 20 },
+      { id: 'mineral_extractor', net: 3 * n - 20 },
+      { id: 'solar_generator', net: 2 * e },
+      { id: 'farm', net: 2 * f - 20 },
+    ].sort((a, b) => b.net - a.net);
+
+    // Fill all remaining ground with the top-ranked option
+    const best = t1Options[0];
+    if (best.net > 0) {
+      const built_ = tryAdd(best.id, 1, 5_000, groundFree, 'ground');
+      groundFree -= built_;
+    }
+  }
+
+  // ── Orbital space: T3 → T2 ───────────────────────────────────────────────
+  if (hasMetropolis) {
+    const foodNet = 60 * f - 120;
+    const id = foodNet >= 60 * e ? 'hydroponics_dome' : 'solar_station';
+    const built_ = tryAdd(id, 6, 200_000, orbitalFree, 'orbital');
+    orbitalFree -= built_ * 6;
+  }
+
+  if (hasColony && hasLaunchSite) {
+    const foodNet = 6 * f - 40;
+    const id = foodNet >= 6 * e ? 'hydroponics_lab' : 'solar_array';
+    const built_ = tryAdd(id, 2, 40_000, orbitalFree, 'orbital');
+    orbitalFree -= built_ * 2;
+  }
+
+  // ── Totals ────────────────────────────────────────────────────────────────
+  const totalOutputDelta: Record<ResourceId, number> = { ...BASE_RESOURCES };
+  let totalScoreDelta = 0;
+  let groundSpaceUsed = 0;
+  let orbitalSpaceUsed = 0;
+  let workersUsed = 0;
+
+  for (const g of groups) {
+    totalScoreDelta += g.scoreDelta;
+    workersUsed += g.workerCost;
+    if (g.spaceType === 'ground') {
+      groundSpaceUsed += g.spaceCost;
+    } else {
+      orbitalSpaceUsed += g.spaceCost;
+    }
+    for (const r of RESOURCE_ORDER) {
+      totalOutputDelta[r] = (totalOutputDelta[r] || 0) + (g.outputDelta[r] || 0);
+    }
+  }
+
+  return {
+    groups,
+    totalScoreDelta,
+    totalOutputDelta,
+    groundSpaceUsed,
+    orbitalSpaceUsed,
+    workersUsed,
+    groundSpaceRemaining: groundFree,
+    orbitalSpaceRemaining: orbitalFree,
+    workersRemaining: workersFree,
+    groundReason,
+    orbitalT2Reason: orbT2Reason,
+    orbitalT3Reason: orbT3Reason,
+  };
+}
+
 export function optimizeBuildForScore(snapshot: ParsedSnapshot, structuresById: Record<string, BuildingDef>, maxSteps: number): BuildOptimizationResult {
   const built = { ...snapshot.structures };
   const currentOutputs = { ...snapshot.resourcesOutput };
@@ -958,6 +1886,405 @@ export function fleetFromBudget(
       energy: Math.max(0, nextScaleNeeds.energy),
     },
   };
+}
+
+// ─── Warship Budget Optimizer ────────────────────────────────────────────────
+
+export const WARSHIP_IDS = [
+  'fighter', 'bomber', 'frigate', 'destroyer', 'cruiser', 'battleship', 'command_carrier',
+] as const;
+
+interface WarshipDef {
+  id: string;
+  name: string;
+  metal: number;
+  mineral: number;
+  score: number;
+}
+
+export interface WarshipFleetEntry {
+  id: string;
+  name: string;
+  count: number;
+  scoreContrib: number;
+}
+
+export interface WarshipBudgetResult {
+  fleet: WarshipFleetEntry[];
+  totalScore: number;
+  usedMetal: number;
+  usedMineral: number;
+  leftoverMetal: number;
+  leftoverMineral: number;
+  leftoverWeighted: number;
+}
+
+export interface WarshipOptimizerResult {
+  highestScore: WarshipBudgetResult;
+  leastLeftover: WarshipBudgetResult;
+}
+
+function greedyWarships(
+  budgetMetal: number,
+  budgetMineral: number,
+  ordered: WarshipDef[],
+  lookup: Record<string, WarshipDef>,
+): WarshipBudgetResult {
+  const counts: Record<string, number> = {};
+  let metalLeft = budgetMetal;
+  let mineralLeft = budgetMineral;
+
+  for (const ship of ordered) {
+    if (ship.metal <= 0 || ship.mineral <= 0) {
+      continue;
+    }
+    const n = Math.floor(Math.min(metalLeft / ship.metal, mineralLeft / ship.mineral));
+    if (n > 0) {
+      counts[ship.id] = (counts[ship.id] || 0) + n;
+      metalLeft -= n * ship.metal;
+      mineralLeft -= n * ship.mineral;
+    }
+  }
+
+  const fleet: WarshipFleetEntry[] = Object.entries(counts)
+    .filter(([, n]) => n > 0)
+    .map(([id, count]) => {
+      const def = lookup[id];
+      return { id, name: def?.name ?? id, count, scoreContrib: (def?.score ?? 0) * count };
+    })
+    .sort((a, b) => b.scoreContrib - a.scoreContrib);
+
+  const totalScore = fleet.reduce((sum, e) => sum + e.scoreContrib, 0);
+  const usedMetal = budgetMetal - metalLeft;
+  const usedMineral = budgetMineral - mineralLeft;
+
+  return {
+    fleet,
+    totalScore,
+    usedMetal,
+    usedMineral,
+    leftoverMetal: metalLeft,
+    leftoverMineral: mineralLeft,
+    leftoverWeighted: metalLeft + mineralLeft * 1.5,
+  };
+}
+
+export function optimizeWarships(
+  budgetMetal: number,
+  budgetMineral: number,
+  shipsById: Record<string, ShipDef>,
+): WarshipOptimizerResult {
+  const warships: WarshipDef[] = (WARSHIP_IDS as readonly string[])
+    .map((id) => {
+      const s = shipsById[id];
+      if (!s || s.costs.metal <= 0 || s.costs.mineral <= 0) {
+        return null;
+      }
+      return { id: s.id, name: s.name, metal: s.costs.metal, mineral: s.costs.mineral, score: s.scoreValue };
+    })
+    .filter((s): s is WarshipDef => s !== null);
+
+  const lookup: Record<string, WarshipDef> = warships.reduce<Record<string, WarshipDef>>((acc, s) => {
+    acc[s.id] = s;
+    return acc;
+  }, {});
+
+  const empty: WarshipBudgetResult = {
+    fleet: [],
+    totalScore: 0,
+    usedMetal: 0,
+    usedMineral: 0,
+    leftoverMetal: budgetMetal,
+    leftoverMineral: budgetMineral,
+    leftoverWeighted: budgetMetal + budgetMineral * 1.5,
+  };
+
+  if (!warships.length || (budgetMetal <= 0 && budgetMineral <= 0)) {
+    return { highestScore: empty, leastLeftover: empty };
+  }
+
+  // Highest score: greedy by score / weighted_cost descending
+  const byScoreEff = [...warships].sort((a, b) => {
+    const effA = a.score / (a.metal + a.mineral * 1.5);
+    const effB = b.score / (b.metal + b.mineral * 1.5);
+    return effB - effA;
+  });
+  const highestScore = greedyWarships(budgetMetal, budgetMineral, byScoreEff, lookup);
+
+  // Least leftover: try all singles, all ordered pairs, + two fixed orders
+  const candidates: WarshipBudgetResult[] = [highestScore];
+
+  for (const ship of warships) {
+    candidates.push(greedyWarships(budgetMetal, budgetMineral, [ship], lookup));
+  }
+
+  for (let i = 0; i < warships.length; i += 1) {
+    for (let j = 0; j < warships.length; j += 1) {
+      if (i === j) {
+        continue;
+      }
+      candidates.push(greedyWarships(budgetMetal, budgetMineral, [warships[i], warships[j]], lookup));
+    }
+  }
+
+  // Weighted cost descending (expensive first)
+  const byCostDesc = [...warships].sort((a, b) => (b.metal + b.mineral * 1.5) - (a.metal + a.mineral * 1.5));
+  candidates.push(greedyWarships(budgetMetal, budgetMineral, byCostDesc, lookup));
+
+  // Weighted cost ascending (cheapest first)
+  const byCostAsc = [...warships].sort((a, b) => (a.metal + a.mineral * 1.5) - (b.metal + b.mineral * 1.5));
+  candidates.push(greedyWarships(budgetMetal, budgetMineral, byCostAsc, lookup));
+
+  const leastLeftover = candidates.reduce((best, curr) =>
+    curr.leftoverWeighted < best.leftoverWeighted ? curr : best,
+  );
+
+  return { highestScore, leastLeftover };
+}
+
+// ─── Combat Scan Parser ──────────────────────────────────────────────────────
+
+export interface CombatFleetEntry {
+  fleetName: string;
+  player: string;
+  alliance: string;
+  side: 'attacker' | 'defender';
+  unitsLost: Record<string, number>;
+}
+
+export interface CombatSideSummary {
+  side: 'attacker' | 'defender';
+  fleets: number;
+  players: string[];
+  alliances: string[];
+  unitsLost: Record<string, number>;
+  totalUnitsLost: number;
+  totalScoreLost: number;
+  totalCostLost: Record<ResourceId, number>;
+  weightedCostLost: number;
+}
+
+export interface CombatPlayerSummary {
+  player: string;
+  alliance: string;
+  side: 'attacker' | 'defender';
+  fleets: number;
+  unitsLost: Record<string, number>;
+  totalUnitsLost: number;
+  totalScoreLost: number;
+  totalCostLost: Record<ResourceId, number>;
+  weightedCostLost: number;
+}
+
+export interface CombatScanParseResult {
+  fleets: CombatFleetEntry[];
+  attackers: CombatSideSummary;
+  defenders: CombatSideSummary;
+  byPlayer: CombatPlayerSummary[];
+  tradeRatio: number;
+  shipIds: string[];
+  warnings: string[];
+}
+
+function parseCombatSideLabel(line: string): 'attacker' | 'defender' | null {
+  const lower = line.toLowerCase().replace(/[^a-z]/g, '');
+  if (/^attack/.test(lower)) return 'attacker';
+  if (/^defend/.test(lower)) return 'defender';
+  return null;
+}
+
+function parseCombatShipLine(line: string, shipNameToId: Record<string, string>): [string, number] | null {
+  const match = line.match(/^(\d[\d,]*)\s*[x×]\s+(.+?)(?:\s*\((?:destroyed|lost|killed)\))?$/i);
+  if (!match) return null;
+  const count = Math.floor(parseHumanNumber(match[1]));
+  const shipId = shipNameToId[safeLower(match[2].trim())];
+  if (!shipId || count <= 0) return null;
+  return [shipId, count];
+}
+
+const PLAYER_ALLIANCE_RE = /^(.{1,120}?)\s*\(([^)]+)\)\s*$/;
+const SHIP_COUNT_RE = /^(\d[\d,]*)\s*[x×]\s+.+/i;
+
+function parseCombatBlocks(lines: string[], defs: GameDefs): CombatFleetEntry[] {
+  const fleets: CombatFleetEntry[] = [];
+  let currentSide: 'attacker' | 'defender' = 'attacker';
+  let i = 0;
+
+  while (i < lines.length) {
+    const line = lines[i];
+    const sideLabel = parseCombatSideLabel(line);
+    if (sideLabel) {
+      currentSide = sideLabel;
+      i++;
+      continue;
+    }
+
+    const playerMatch = line.match(PLAYER_ALLIANCE_RE);
+    if (playerMatch && !line.match(SHIP_COUNT_RE)) {
+      const alliance = playerMatch[2].trim();
+      const player = inferPlayerName(playerMatch[1]);
+      const unitsLost: Record<string, number> = {};
+      i++;
+
+      while (i < lines.length) {
+        const inner = lines[i];
+        if (parseCombatSideLabel(inner)) break;
+        if (inner.match(PLAYER_ALLIANCE_RE) && !inner.match(SHIP_COUNT_RE)) break;
+        const parsed = parseCombatShipLine(inner, defs.shipNameToId);
+        if (parsed) {
+          const [shipId, count] = parsed;
+          unitsLost[shipId] = (unitsLost[shipId] || 0) + count;
+        }
+        i++;
+      }
+
+      if (Object.keys(unitsLost).length > 0) {
+        fleets.push({ fleetName: line, player, alliance, side: currentSide, unitsLost });
+      }
+      continue;
+    }
+    i++;
+  }
+
+  return fleets;
+}
+
+function buildCombatSide(
+  side: 'attacker' | 'defender',
+  fleets: CombatFleetEntry[],
+  shipsById: Record<string, ShipDef>,
+): CombatSideSummary {
+  const sideFleets = fleets.filter((f) => f.side === side);
+  const unitsLost: Record<string, number> = {};
+  let totalUnitsLost = 0;
+  let totalScoreLost = 0;
+  const totalCostLost: Record<ResourceId, number> = { metal: 0, mineral: 0, food: 0, energy: 0 };
+
+  for (const fleet of sideFleets) {
+    for (const [id, count] of Object.entries(fleet.unitsLost)) {
+      unitsLost[id] = (unitsLost[id] || 0) + count;
+      totalUnitsLost += count;
+      const ship = shipsById[id];
+      if (ship) {
+        totalScoreLost += ship.scoreValue * count;
+        totalCostLost.metal += ship.costs.metal * count;
+        totalCostLost.mineral += ship.costs.mineral * count;
+        totalCostLost.food += ship.costs.food * count;
+        totalCostLost.energy += ship.costs.energy * count;
+      }
+    }
+  }
+
+  return {
+    side,
+    fleets: sideFleets.length,
+    players: [...new Set(sideFleets.map((f) => f.player))],
+    alliances: [...new Set(sideFleets.map((f) => f.alliance))],
+    unitsLost,
+    totalUnitsLost,
+    totalScoreLost,
+    totalCostLost,
+    weightedCostLost: weightedResourceValue(totalCostLost),
+  };
+}
+
+function buildCombatPlayers(fleets: CombatFleetEntry[], shipsById: Record<string, ShipDef>): CombatPlayerSummary[] {
+  const map = new Map<string, CombatPlayerSummary>();
+
+  for (const fleet of fleets) {
+    const key = `${fleet.player}::${fleet.side}`;
+    const entry = map.get(key) ?? {
+      player: fleet.player,
+      alliance: fleet.alliance,
+      side: fleet.side,
+      fleets: 0,
+      unitsLost: {},
+      totalUnitsLost: 0,
+      totalScoreLost: 0,
+      totalCostLost: { metal: 0, mineral: 0, food: 0, energy: 0 },
+      weightedCostLost: 0,
+    };
+
+    entry.fleets++;
+    for (const [id, count] of Object.entries(fleet.unitsLost)) {
+      entry.unitsLost[id] = (entry.unitsLost[id] || 0) + count;
+      entry.totalUnitsLost += count;
+      const ship = shipsById[id];
+      if (ship) {
+        entry.totalScoreLost += ship.scoreValue * count;
+        entry.totalCostLost.metal += ship.costs.metal * count;
+        entry.totalCostLost.mineral += ship.costs.mineral * count;
+        entry.totalCostLost.food += ship.costs.food * count;
+        entry.totalCostLost.energy += ship.costs.energy * count;
+      }
+    }
+    entry.weightedCostLost = weightedResourceValue(entry.totalCostLost);
+    map.set(key, entry);
+  }
+
+  return Array.from(map.values()).sort((a, b) => b.weightedCostLost - a.weightedCostLost);
+}
+
+export function parseCombatScanInput(rawInput: string, defs: GameDefs): CombatScanParseResult {
+  const warnings: string[] = [];
+  const text = normalizeFleetScanText(rawInput);
+  const lines = text.split('\n').map((l) => l.trim()).filter(Boolean);
+
+  let fleets = parseCombatBlocks(lines, defs);
+
+  if (fleets.length === 0) {
+    warnings.push('No Attacker/Defender labels found. Expected format: "Attacker" / "Defender" header, then "Player (Alliance)" lines with "N x Ship" losses.');
+  }
+
+  const attackers = buildCombatSide('attacker', fleets, defs.shipsById);
+  const defenders = buildCombatSide('defender', fleets, defs.shipsById);
+  const byPlayer = buildCombatPlayers(fleets, defs.shipsById);
+
+  const tradeRatio = defenders.weightedCostLost > 0
+    ? attackers.weightedCostLost / defenders.weightedCostLost
+    : attackers.weightedCostLost > 0 ? 99 : 1;
+
+  const shipIdSet = new Set<string>();
+  for (const fleet of fleets) {
+    for (const id of Object.keys(fleet.unitsLost)) shipIdSet.add(id);
+  }
+  const shipIds = Object.keys(defs.shipsById).filter((id) => shipIdSet.has(id));
+
+  return { fleets, attackers, defenders, byPlayer, tradeRatio, shipIds, warnings };
+}
+
+export function formatCombatScanAsDiscord(result: CombatScanParseResult, shipsById: Record<string, ShipDef>): string {
+  if (result.fleets.length === 0) return '';
+
+  const { attackers, defenders, tradeRatio } = result;
+  const winner = tradeRatio < 0.95 ? 'Attackers' : tradeRatio > 1.05 ? 'Defenders' : 'Draw';
+  const ratio = Number.isFinite(tradeRatio) ? tradeRatio.toFixed(2) : '∞';
+
+  const sideLines = (side: CombatSideSummary): string[] => {
+    const rows: string[] = [
+      `${side.side === 'attacker' ? 'ATTACKERS' : 'DEFENDERS'} (${side.alliances.join(', ')})`,
+      `Players: ${side.players.join(', ')}`,
+      `Fleets: ${side.fleets} | Units lost: ${formatHumanNumber(side.totalUnitsLost)}`,
+      `Score lost: ${formatHumanNumber(side.totalScoreLost)} | Weighted cost: ${formatHumanNumber(side.weightedCostLost)}`,
+      `Metal destroyed: ${formatHumanNumber(side.totalCostLost.metal)} | Mineral destroyed: ${formatHumanNumber(side.totalCostLost.mineral)}`,
+    ];
+    for (const [id, count] of Object.entries(side.unitsLost).sort(([, a], [, b]) => b - a)) {
+      const name = shipsById[id]?.name ?? id;
+      rows.push(`  ${formatHumanNumber(count)} x ${name}`);
+    }
+    return rows;
+  };
+
+  const lines = [
+    'Combat Scan Analysis',
+    `Winner: ${winner} | Trade ratio (atk/def): ${ratio}`,
+    '',
+    ...sideLines(attackers),
+    '',
+    ...sideLines(defenders),
+  ];
+
+  return `\`\`\`\n${lines.join('\n').trim()}\n\`\`\``;
 }
 
 export function projectAvailableResources(snapshot: ParsedSnapshot, ticks: number): Record<ResourceId, number> {
