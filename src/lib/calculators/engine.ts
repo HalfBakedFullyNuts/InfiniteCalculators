@@ -2475,3 +2475,151 @@ export function projectAvailableResources(snapshot: ParsedSnapshot, ticks: numbe
     energy: Math.max(0, projected.energy),
   };
 }
+
+// ─── Radar Parser ─────────────────────────────────────────────────────────────
+
+export interface RadarFleet {
+  fleetName: string;
+  player: string;
+  alliance: string;
+  originName: string;
+  originCoords: string;
+  destName: string;
+  destCoords: string;
+  eta: number;
+  score: number;
+}
+
+export interface RadarAllianceSummary {
+  alliance: string;
+  count: number;
+  players: string[];
+}
+
+export interface RadarSystemSummary {
+  systemId: string;
+  destName: string;
+  destCoords: string;
+  fleets: RadarFleet[];
+  byAlliance: RadarAllianceSummary[];
+}
+
+export interface RadarParseResult {
+  systems: RadarSystemSummary[];
+  warnings: string[];
+}
+
+const RADAR_COMMS_RE = /^Comms\s*[—–-]\s*(\d+\/\d+)$/;
+const RADAR_COORDS_RE = /^\d+:\d+:\d+$/;
+const RADAR_ETA_RE = /^(\d+)t$/i;
+const RADAR_PLAYER_RE = /^(.+?)\s*\(([^)]+)\)\s*$/;
+const RADAR_COL_HEADERS = new Set(['fleet', 'ruler', 'route', 'eta', 'score']);
+
+function parseRadarFleetRows(sysLines: string[]): RadarFleet[] {
+  const fleets: RadarFleet[] = [];
+
+  for (let i = 1; i < sysLines.length; i++) {
+    const playerMatch = sysLines[i].match(RADAR_PLAYER_RE);
+    if (!playerMatch) continue;
+
+    const player = playerMatch[1].trim();
+    const alliance = playerMatch[2].trim();
+
+    let fleetName = '';
+    for (let k = i - 1; k >= 0; k--) {
+      if (!RADAR_COL_HEADERS.has(safeLower(sysLines[k])) && !RADAR_COMMS_RE.test(sysLines[k])) {
+        fleetName = sysLines[k];
+        break;
+      }
+    }
+
+    let originName = '', originCoords = '', destName = '', destCoords = '';
+    let eta = 0, score = 0, stage = 0, j = i + 1;
+
+    while (j < sysLines.length && stage < 7) {
+      const l = sysLines[j];
+      if (RADAR_COMMS_RE.test(l)) break;
+      if (l.match(RADAR_PLAYER_RE) && !RADAR_COORDS_RE.test(l)) break;
+
+      if (stage === 0) { originName = l; stage++; }
+      else if (stage === 1 && RADAR_COORDS_RE.test(l)) { originCoords = l; stage++; }
+      else if (stage === 2 && l === '→') { stage++; }
+      else if (stage === 3) { destName = l; stage++; }
+      else if (stage === 4 && RADAR_COORDS_RE.test(l)) { destCoords = l; stage++; }
+      else if (stage === 5) {
+        const em = l.match(RADAR_ETA_RE);
+        if (em) { eta = Number(em[1]); stage++; }
+      } else if (stage === 6) {
+        score = parseHumanNumber(l);
+        stage++;
+      }
+      j++;
+    }
+
+    fleets.push({ fleetName, player, alliance, originName, originCoords, destName, destCoords, eta, score });
+  }
+
+  return fleets;
+}
+
+export function parseRadarInput(rawInput: string): RadarParseResult {
+  const warnings: string[] = [];
+  const text = rawInput.replace(ANSI_RE, '').replace(/ /g, ' ').replace(/\r/g, '\n');
+  const lines = text.split('\n').map((l) => l.trim()).filter(Boolean);
+
+  const sysStarts: number[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    if (RADAR_COMMS_RE.test(lines[i])) sysStarts.push(i);
+  }
+
+  if (sysStarts.length === 0) {
+    warnings.push('No radar systems detected. Paste the full Radar page (Ctrl+A).');
+    return { systems: [], warnings };
+  }
+
+  const systems: RadarSystemSummary[] = [];
+
+  for (let si = 0; si < sysStarts.length; si++) {
+    const start = sysStarts[si];
+    const end = si + 1 < sysStarts.length ? sysStarts[si + 1] : lines.length;
+    const sysLines = lines.slice(start, end);
+
+    const sysMatch = sysLines[0].match(RADAR_COMMS_RE);
+    const systemId = sysMatch ? sysMatch[1] : '';
+    const fleets = parseRadarFleetRows(sysLines);
+    if (fleets.length === 0) continue;
+
+    const destName = fleets[0].destName;
+    const destCoords = fleets[0].destCoords;
+
+    const allianceMap = new Map<string, { count: number; players: Set<string> }>();
+    for (const f of fleets) {
+      const entry = allianceMap.get(f.alliance) ?? { count: 0, players: new Set<string>() };
+      entry.count++;
+      entry.players.add(f.player);
+      allianceMap.set(f.alliance, entry);
+    }
+
+    const byAlliance: RadarAllianceSummary[] = Array.from(allianceMap.entries())
+      .map(([alliance, data]) => ({ alliance, count: data.count, players: Array.from(data.players).sort() }))
+      .sort((a, b) => b.count - a.count);
+
+    systems.push({ systemId, destName, destCoords, fleets, byAlliance });
+  }
+
+  return { systems, warnings };
+}
+
+export function formatRadarSystemAsDiscord(system: RadarSystemSummary): string {
+  const title = [system.destName, system.destCoords].filter(Boolean).join(' ');
+  const header = `${title || system.systemId} — ${system.fleets.length} fleet${system.fleets.length !== 1 ? 's' : ''} inbound`;
+
+  const rows = system.byAlliance.map((a) => [a.alliance, String(a.count), a.players.join(', ')]);
+  const cols = ['Alliance', 'Flt', 'Players'];
+  const widths = cols.map((c, ci) => Math.max(c.length, ...rows.map((r) => r[ci].length)));
+  const sep = widths.map((w) => '-'.repeat(w)).join('  ');
+  const renderRow = (row: string[]) => row.map((cell, i) => (i === 1 ? cell.padStart(widths[i]) : cell.padEnd(widths[i]))).join('  ');
+
+  const lines = [header, renderRow(cols), sep, ...rows.map(renderRow)];
+  return `\`\`\`\n${lines.join('\n')}\n\`\`\``;
+}

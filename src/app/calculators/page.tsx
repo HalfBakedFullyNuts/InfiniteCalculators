@@ -10,6 +10,7 @@ import {
   Database,
   Factory,
   FileText,
+  Globe,
   Radar,
   Route,
   Ship,
@@ -30,6 +31,7 @@ import {
   formatCombatScanAsDiscord,
   formatFleetOverviewAsDiscord,
   formatFleetScanAsDiscord,
+  formatRadarSystemAsDiscord,
   formulaBuildRecommendation,
   formatHumanNumber,
   optimizeWarships,
@@ -37,6 +39,7 @@ import {
   parseFleetScanInput,
   parseFleetOverviewInput,
   parseHumanNumber,
+  parseRadarInput,
   parseRatioInput,
   parseSnapshotInput,
   projectAvailableResources,
@@ -44,6 +47,7 @@ import {
   type CombatSideSummary,
   type CombatPlayerSummary,
   type FleetScanParseResult,
+  type RadarParseResult,
   type ShipDef,
   type FleetCargoId,
   type FleetOverviewParseResult,
@@ -69,6 +73,7 @@ const TOOL_NAV = [
   { href: '#fleet-overview', label: 'Fleet Cargo', icon: Route },
   { href: '#fleet-scan', label: 'Fleet Scan', icon: Radar },
   { href: '#combat-scan', label: 'Combat', icon: Swords },
+  { href: '#radar', label: 'Radar', icon: Globe },
 ];
 
 const DEFAULT_INPUT = `Paste either:
@@ -317,6 +322,8 @@ export default function CalculatorsPage() {
   const [fleetScanCopyStatus, setFleetScanCopyStatus] = useState('');
   const [combatScanInput, setCombatScanInput] = useState(DEFAULT_COMBAT_SCAN_INPUT);
   const [combatScanCopyStatus, setCombatScanCopyStatus] = useState('');
+  const [radarInput, setRadarInput] = useState('');
+  const [radarCopyStatus, setRadarCopyStatus] = useState<Record<string, string>>({});
   const [calculatorCopyStatus, setCalculatorCopyStatus] = useState<Record<string, string>>({});
 
   const parsed = useMemo<ParsedSnapshot>(() => parseSnapshotInput(rawInput, defs), [rawInput, defs]);
@@ -329,6 +336,8 @@ export default function CalculatorsPage() {
     () => parseCombatScanInput(combatScanInput, defs),
     [combatScanInput, defs],
   );
+
+  const radarResult = useMemo<RadarParseResult>(() => parseRadarInput(radarInput), [radarInput]);
 
   const combatScanDiscordExport = useMemo(
     () => formatCombatScanAsDiscord(combatScan, defs.shipsById),
@@ -1327,6 +1336,14 @@ export default function CalculatorsPage() {
           onCopy={handleCopyCombatScanDiscord}
           shipsById={defs.shipsById}
         />
+
+        <RadarSection
+          radarInput={radarInput}
+          setRadarInput={setRadarInput}
+          radarResult={radarResult}
+          copyStatus={radarCopyStatus}
+          setCopyStatus={setRadarCopyStatus}
+        />
           </div>
         </div>
       </div>
@@ -1582,6 +1599,84 @@ function CombatScanSection({
         status={combatScanCopyStatus}
         onCopy={onCopy}
       />
+    </TableCard>
+  );
+}
+
+function RadarSection({
+  radarInput,
+  setRadarInput,
+  radarResult,
+  copyStatus,
+  setCopyStatus,
+}: {
+  radarInput: string;
+  setRadarInput: (v: string) => void;
+  radarResult: RadarParseResult;
+  copyStatus: Record<string, string>;
+  setCopyStatus: (v: Record<string, string>) => void;
+}) {
+  const handleCopy = async (key: string, text: string) => {
+    const ok = await copyToClipboard(text);
+    setCopyStatus({ ...copyStatus, [key]: ok ? 'Copied.' : 'Clipboard blocked.' });
+  };
+
+  return (
+    <TableCard id="radar" title="10) Radar — Incoming Fleets by System">
+      <p className="mb-3 text-xs text-slate-400">
+        Paste the full Radar page (Ctrl+A). Each system shows alliance fleet counts with a per-system Discord copy.
+      </p>
+      <textarea
+        value={radarInput}
+        onChange={(e) => { setRadarInput(e.target.value); setCopyStatus({}); }}
+        className="h-48 w-full rounded-lg border border-cyan-300/20 bg-black/35 p-2 text-xs text-slate-100 outline-none"
+        spellCheck={false}
+        placeholder="Paste Radar page here…"
+      />
+
+      {radarResult.warnings.length > 0 && (
+        <div className="mt-3 rounded-lg border border-amber-400/40 bg-amber-900/20 p-3 text-xs text-amber-200">
+          {radarResult.warnings.map((w) => <div key={w}>• {w}</div>)}
+        </div>
+      )}
+
+      {radarResult.systems.length > 0 && (
+        <div className="mt-3 space-y-2">
+          {radarResult.systems.map((sys) => {
+            const key = sys.destCoords || sys.systemId;
+            const discord = formatRadarSystemAsDiscord(sys);
+            const copied = copyStatus[key] === 'Copied.';
+            const Icon = copied ? CheckCircle2 : Clipboard;
+            return (
+              <div key={key} className="flex flex-wrap items-center gap-2 rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-xs">
+                <span className="font-semibold text-slate-100 shrink-0">
+                  {sys.destName || sys.systemId}
+                </span>
+                <span className="font-mono text-cyan-200/70 shrink-0">{sys.destCoords}</span>
+                <span className="mx-1 text-white/20">·</span>
+                {sys.byAlliance.map((a) => (
+                  <span key={a.alliance} className="text-slate-300">
+                    <span className="text-slate-500">{a.alliance}:</span> {a.count}
+                  </span>
+                ))}
+                <span className="ml-auto flex items-center gap-2">
+                  {copyStatus[key] && (
+                    <span className="text-slate-500">{copyStatus[key]}</span>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => handleCopy(key, discord)}
+                    className="inline-flex items-center gap-1.5 rounded border border-cyan-300/30 bg-cyan-400/10 px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.1em] text-cyan-100 transition hover:bg-cyan-400/20"
+                  >
+                    <Icon className="h-3.5 w-3.5" aria-hidden="true" />
+                    Copy
+                  </button>
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </TableCard>
   );
 }
