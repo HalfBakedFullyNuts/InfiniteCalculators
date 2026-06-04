@@ -18,6 +18,7 @@ import {
   Wallet,
 } from 'lucide-react';
 import gameDataRaw from '../../lib/game/game_data.json';
+import pkg from '../../../package.json';
 import {
   buildGameDefs,
   calculateCargoPlan,
@@ -1329,6 +1330,10 @@ export default function CalculatorsPage() {
           </div>
         </div>
       </div>
+
+      <footer className="relative mt-2 border-t border-white/10 py-3 text-center text-[11px] text-slate-600">
+        Infinite Conflict Calculator Companion · v{pkg.version}
+      </footer>
     </main>
   );
 }
