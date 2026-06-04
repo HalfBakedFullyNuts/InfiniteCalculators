@@ -331,6 +331,30 @@ function maybeReadSingleMetric(text: string, key: string): number | undefined {
   return parseHumanNumber(match[1].replace(/\s+/g, ''));
 }
 
+// Resolve a captured name to a known id. Exact match first; then fall back to
+// the longest known name that is a leading whole-word prefix. Glued full-page
+// copies bleed the next row's label onto a count line ("1,783 x FighterBomber"
+// → "fighter bomber"), so prefix recovery keeps those counts instead of dropping
+// the whole fleet.
+function resolveKnownName(normalizedName: string, knownNameToId: Record<string, string>): string | undefined {
+  const exact = knownNameToId[normalizedName];
+  if (exact) {
+    return exact;
+  }
+
+  let best: string | undefined;
+  let bestLen = 0;
+  for (const name of Object.keys(knownNameToId)) {
+    const isPrefix = normalizedName === name || normalizedName.startsWith(`${name} `);
+    if (isPrefix && name.length > bestLen) {
+      best = knownNameToId[name];
+      bestLen = name.length;
+    }
+  }
+
+  return best;
+}
+
 function parseCountLines(
   lines: string[],
   knownNameToId: Record<string, string>,
@@ -362,7 +386,7 @@ function parseCountLines(
       }
 
       const normalizedName = safeLower(nameToken.replace(/\(.*\)/g, '').trim());
-      const id = knownNameToId[normalizedName];
+      const id = resolveKnownName(normalizedName, knownNameToId);
       if (!id) {
         continue;
       }
@@ -514,12 +538,14 @@ export function parseFleetScanInput(rawInput: string, defs: GameDefs): FleetScan
   const warnings: string[] = [];
   const text = normalizeFleetScanText(rawInput);
 
-  // A fleet's status line is either "Arriving in N turns" or "Waiting at planet"
-  // (the planet owner's own line is followed by "Owned" instead, so it never matches).
-  // Capturing variant: the turns count lands in group 3 (undefined for waiting fleets).
-  const STATUS_CAP = 'Arriving in(?:\\s+(\\d+))?\\s*turns?|Waiting[^\\n]*';
-  const STATUS_NOCAP = 'Arriving in(?:\\s+\\d+)?\\s*turns?|Waiting[^\\n]*';
-  // Matches: [fleet-name/player text] (Alliance) [optional newline] <status> [ships...]
+  // A fleet head is "[fleet/player text] (Alliance)" followed by a status line.
+  // The status is "Arriving in N turns" (turns → group 3) or ANY other non-empty
+  // line that is not the planet owner's "Owned/Allied/Hostile" summary header
+  // (e.g. "Waiting at planet", "Returning", etc.). Accepting any status keeps the
+  // parser working when the UI uses wording we have not seen, and avoids dropping
+  // fleets. Ship/coordinate lines never contain "(...)", so only real heads match.
+  const STATUS_CAP = 'Arriving in(?:\\s+(\\d+))?\\s*turns?|(?!Owned\\b|Allied\\b|Hostile\\b)[^\\n]+';
+  const STATUS_NOCAP = 'Arriving in(?:\\s+\\d+)?\\s*turns?|(?!Owned\\b|Allied\\b|Hostile\\b)[^\\n]+';
   // \s* between ) and the status intentionally matches the newline in the multi-line UI
   // copy where "Player (Alliance)" and the status are on separate lines.
   const entryRx = new RegExp(

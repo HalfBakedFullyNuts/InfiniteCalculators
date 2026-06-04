@@ -305,6 +305,74 @@ Privacy`;
     expect(llama?.fleets).toBe(2); // Resource Evac (waiting) + Blurb (arriving)
     expect(llama?.units.freighter).toBe(2);
   });
+
+  test('parses an unknown status keyword (not Arriving/Waiting)', () => {
+    // The status wording can vary ("Returning", "Stationed", …). Any non-empty
+    // status line that is not the Owned/Allied/Hostile owner header counts.
+    const input = `Fleet Scan Result
+2:395:2971
+Llama Del Rey (Operation Epic Furry)
+Owned
+Allied
+Hostile
+FighterFighter
+0
+16,685
+0
+Waiting and incoming fleets
+Returners
+Don Marco (Operation Epic Furry)
+Returning to base
+Fighter
+500 x Fighter
+Frigate
+20 x Frigate
+Rules
+Terms
+Privacy`;
+
+    const parsed = parseFleetScanInput(input, defs);
+    expect(parsed.warnings).toHaveLength(0);
+    expect(parsed.entries).toHaveLength(1);
+    expect(parsed.entries[0].player).toBe('Don Marco');
+    expect(parsed.entries[0].arrivalTurns).toBeNull();
+    expect(parsed.entries[0].units.fighter).toBe(500);
+    expect(parsed.entries[0].units.frigate).toBe(20);
+  });
+
+  test('recovers ship counts from a glued copy where the next label bleeds in', () => {
+    // A plain-text clipboard copy can join a count line with the next row's
+    // label: "1,783 x FighterBomber" → normalized "1,783 x Fighter Bomber".
+    // The leading known ship name ("fighter") must still resolve.
+    const input = `Fleet Scan Result
+2:395:2971
+Llama Del Rey (Operation Epic Furry)
+Owned
+Allied
+Hostile
+FighterFighter
+0
+16,685
+0
+Waiting and incoming fleets
+Strike Group
+Don Marco (Operation Epic Furry)
+Waiting at planet
+1,783 x Fighter Bomber
+426 x Bomber Frigate
+234 x Invasion Ship Outpost Ship
+Rules
+Terms
+Privacy`;
+
+    const parsed = parseFleetScanInput(input, defs);
+    expect(parsed.warnings).toHaveLength(0);
+    expect(parsed.entries).toHaveLength(1);
+    expect(parsed.entries[0].units.fighter).toBe(1783);
+    expect(parsed.entries[0].units.bomber).toBe(426);
+    // Multi-word ship name as the leading prefix must win over a shorter one.
+    expect(parsed.entries[0].units.invasion_ship).toBe(234);
+  });
 });
 
 describe('parseCombatScanInput', () => {
