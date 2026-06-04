@@ -2053,6 +2053,165 @@ export function optimizeWarships(
 
 // ─── Combat Scan Parser ──────────────────────────────────────────────────────
 
+// Returns true when a line is a doubled ship name from a full-page copy
+// (e.g. "Fighter Fighter", "Invasion Ship Invasion Ship").
+function isDoubledPhrase(line: string): boolean {
+  const parts = safeLower(line).split(' ');
+  if (parts.length < 2 || parts.length % 2 !== 0) return false;
+  const half = parts.length / 2;
+  return parts.slice(0, half).join(' ') === parts.slice(half).join(' ');
+}
+
+function detectDoubledShipId(line: string, shipNameToId: Record<string, string>): string | null {
+  if (!isDoubledPhrase(line)) return null;
+  const lower = safeLower(line);
+  for (const [name, id] of Object.entries(shipNameToId)) {
+    if (lower === name + ' ' + name) return id;
+  }
+  return null;
+}
+
+// Parse the top-level Owned / Hostile before-counts from a battle report summary block.
+function parseBattleSummaryColumns(
+  lines: string[],
+  shipNameToId: Record<string, string>,
+): { owned: Record<string, number>; hostile: Record<string, number> } {
+  const owned: Record<string, number> = {};
+  const hostile: Record<string, number> = {};
+  const SKIP = new Set(['owned', 'allied', 'hostile', 'before', 'after']);
+
+  let i = lines.findIndex((l) => safeLower(l) === 'owned');
+  if (i < 0) return { owned, hostile };
+  i++;
+
+  while (i < lines.length) {
+    const line = lines[i];
+    const shipId = detectDoubledShipId(line, shipNameToId);
+    if (shipId) {
+      const vals = lines.slice(i + 1, i + 7).map((v) => parseHumanNumber(v));
+      if (vals.length >= 6) {
+        owned[shipId] = vals[0];  // owned before
+        hostile[shipId] = vals[4]; // hostile before
+      }
+      i += 7;
+    } else if (isDoubledPhrase(line)) {
+      i += 7; // non-ship doubled row (Worker, Soldier) — skip 6 value lines
+    } else if (SKIP.has(safeLower(line))) {
+      i++;
+    } else {
+      i++;
+    }
+  }
+
+  return { owned, hostile };
+}
+
+interface BattleFleet {
+  fleetName: string;
+  player: string;
+  before: Record<string, number>;
+  lost: Record<string, number>;
+}
+
+const BATTLE_FLEET_RE = /^(.+?)\(([^)]+)\)\s*$/;
+const FOOTER_WORDS = new Set(['rules', 'terms', 'privacy']);
+
+function parseBattleFleetSection(lines: string[], shipNameToId: Record<string, string>): BattleFleet[] {
+  const fleets: BattleFleet[] = [];
+  const SKIP = new Set(['before', 'after']);
+  let i = 0;
+
+  while (i < lines.length) {
+    const line = lines[i];
+    if (SKIP.has(safeLower(line)) || FOOTER_WORDS.has(safeLower(line))) { i++; continue; }
+
+    const fm = line.match(BATTLE_FLEET_RE);
+    if (!fm) { i++; continue; }
+
+    const fleetName = fm[1].trim();
+    const player = fm[2].trim();
+    const before: Record<string, number> = {};
+    const lost: Record<string, number> = {};
+    i++;
+
+    while (i < lines.length) {
+      const inner = lines[i];
+      if (SKIP.has(safeLower(inner))) { i++; continue; }
+      if (FOOTER_WORDS.has(safeLower(inner)) || inner.match(BATTLE_FLEET_RE)) break;
+
+      const shipId = detectDoubledShipId(inner, shipNameToId);
+      if (shipId) {
+        const b = parseHumanNumber(lines[i + 1] || '0');
+        const a = parseHumanNumber(lines[i + 2] || '0');
+        before[shipId] = b;
+        const loss = Math.max(0, b - a);
+        if (loss > 0) lost[shipId] = (lost[shipId] || 0) + loss;
+        i += 3;
+      } else if (isDoubledPhrase(inner)) {
+        i += 3; // non-ship doubled row — skip 2 value lines
+      } else {
+        i++;
+      }
+    }
+
+    fleets.push({ fleetName, player, before, lost });
+  }
+
+  return fleets;
+}
+
+// Assign each fleet to attacker or defender by comparing per-player ship totals
+// against the owned (defender) and hostile (attacker) columns from the summary.
+function assignBattleReportSides(
+  fleets: BattleFleet[],
+  ownedBefore: Record<string, number>,
+  hostileBefore: Record<string, number>,
+): CombatFleetEntry[] {
+  const playerBefore = new Map<string, Record<string, number>>();
+  for (const fleet of fleets) {
+    const acc = playerBefore.get(fleet.player) || {};
+    for (const [id, count] of Object.entries(fleet.before)) {
+      acc[id] = (acc[id] || 0) + count;
+    }
+    playerBefore.set(fleet.player, acc);
+  }
+
+  const playerSide = new Map<string, 'attacker' | 'defender'>();
+  for (const [player, counts] of playerBefore.entries()) {
+    let ownedScore = 0;
+    let hostileScore = 0;
+    for (const [id, count] of Object.entries(counts)) {
+      ownedScore += Math.min(count, ownedBefore[id] || 0);
+      hostileScore += Math.min(count, hostileBefore[id] || 0);
+    }
+    playerSide.set(player, hostileScore >= ownedScore ? 'attacker' : 'defender');
+  }
+
+  return fleets.map((fleet) => ({
+    fleetName: fleet.fleetName,
+    player: fleet.player,
+    alliance: 'Unknown',
+    side: playerSide.get(fleet.player) ?? 'attacker',
+    unitsLost: fleet.lost,
+  }));
+}
+
+// Try to parse a game battle report (has a "Fleet Details" section with per-fleet
+// Before/After ship counts). Returns null if the input is not this format.
+function tryParseBattleReport(rawInput: string, defs: GameDefs): CombatFleetEntry[] | null {
+  const text = normalizeFleetScanText(rawInput);
+  const lines = text.split('\n').map((l) => l.trim()).filter(Boolean);
+
+  const detailsIdx = lines.findIndex((l) => safeLower(l) === 'fleet details');
+  if (detailsIdx < 0) return null;
+
+  const { owned, hostile } = parseBattleSummaryColumns(lines.slice(0, detailsIdx), defs.shipNameToId);
+  const battleFleets = parseBattleFleetSection(lines.slice(detailsIdx + 1), defs.shipNameToId);
+
+  if (battleFleets.length === 0) return null;
+  return assignBattleReportSides(battleFleets, owned, hostile);
+}
+
 export interface CombatFleetEntry {
   fleetName: string;
   player: string;
@@ -2239,10 +2398,13 @@ export function parseCombatScanInput(rawInput: string, defs: GameDefs): CombatSc
   const text = normalizeFleetScanText(rawInput);
   const lines = text.split('\n').map((l) => l.trim()).filter(Boolean);
 
-  let fleets = parseCombatBlocks(lines, defs);
+  // Try the game's native battle report format (Fleet Details with Before/After)
+  // before falling back to the manual Attacker/Defender format.
+  const battleReportFleets = tryParseBattleReport(rawInput, defs);
+  let fleets = battleReportFleets ?? parseCombatBlocks(lines, defs);
 
   if (fleets.length === 0) {
-    warnings.push('No Attacker/Defender labels found. Expected format: "Attacker" / "Defender" header, then "Player (Alliance)" lines with "N x Ship" losses.');
+    warnings.push('No combat data found. Paste a Combat Report page (has a "Fleet Details" section), or use the manual format: "Attacker" / "Defender" labels, then "Player (Alliance)" lines with "N x Ship" losses.');
   }
 
   const attackers = buildCombatSide('attacker', fleets, defs.shipsById);

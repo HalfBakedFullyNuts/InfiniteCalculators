@@ -110,20 +110,21 @@ Tab-preserved copy keeps column positions so soldiers land in the right column.
 Tab format (10 columns):
 Name\tStatus\tRoute\tMetal\tMineral\tFood\tEnergy\tWorker\tSoldier\tETA`;
 
-const DEFAULT_COMBAT_SCAN_INPUT = `Paste a combat/battle report here.
+const DEFAULT_COMBAT_SCAN_INPUT = `Paste a Combat Report page here (Ctrl+A from the game).
 
-Expected format:
+The parser handles the native game format:
+Fleet Details
+FleetName(PlayerName)
+Before / After counts per ship type
+
+Also accepts manual format:
 Attacker
 PlayerA (AllianceA)
 250 x Fighter
-50 x Bomber
-10 x Destroyer
 
 Defender
 PlayerB (AllianceB)
-180 x Fighter
-30 x Cruiser
-5 x Battleship`;
+180 x Fighter`;
 
 
 function idLabel(id: string): string {
@@ -1462,7 +1463,7 @@ function CombatScanSection({
   return (
     <TableCard id="combat-scan" title="9) Combat Scan Analyzer">
       <p className="mb-3 text-xs text-slate-400">
-        Paste a battle report. Label sections with <span className="font-mono text-cyan-200">Attacker</span> / <span className="font-mono text-cyan-200">Defender</span>, then list fleets as <span className="font-mono text-cyan-200">Player (Alliance)</span> followed by <span className="font-mono text-cyan-200">N x Ship</span> lines. Supports <span className="font-mono text-cyan-200">(destroyed)</span> suffix.
+        Paste a Combat Report page (Ctrl+A from the game). The parser reads the <span className="font-mono text-cyan-200">Fleet Details</span> section with Before/After ship counts and calculates losses automatically. Also accepts manual <span className="font-mono text-cyan-200">Attacker</span> / <span className="font-mono text-cyan-200">Defender</span> format with <span className="font-mono text-cyan-200">N x Ship</span> lines.
       </p>
 
       <textarea
