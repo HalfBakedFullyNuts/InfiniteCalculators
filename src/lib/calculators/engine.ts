@@ -514,10 +514,19 @@ export function parseFleetScanInput(rawInput: string, defs: GameDefs): FleetScan
   const warnings: string[] = [];
   const text = normalizeFleetScanText(rawInput);
 
-  // Matches: [fleet-name/player text] (Alliance) [optional newline] Arriving in N turns [ships...]
-  // \s* between ) and Arriving intentionally matches the newline in the new UI format where
-  // "Player (Alliance)" and "Arriving in N turns" are on separate lines.
-  const entryRx = /([^\n]{1,220}?)\s*\(([^)]+)\)\s*Arriving in(?:\s+(\d+))?\s*turns?([\s\S]*?)(?=(?:[^\n]{1,220}?\s*\([^)]+\)\s*Arriving in(?:\s+\d+)?\s*turns?)|Rules\s*Terms\s*Privacy|$)/gi;
+  // A fleet's status line is either "Arriving in N turns" or "Waiting at planet"
+  // (the planet owner's own line is followed by "Owned" instead, so it never matches).
+  // Capturing variant: the turns count lands in group 3 (undefined for waiting fleets).
+  const STATUS_CAP = 'Arriving in(?:\\s+(\\d+))?\\s*turns?|Waiting[^\\n]*';
+  const STATUS_NOCAP = 'Arriving in(?:\\s+\\d+)?\\s*turns?|Waiting[^\\n]*';
+  // Matches: [fleet-name/player text] (Alliance) [optional newline] <status> [ships...]
+  // \s* between ) and the status intentionally matches the newline in the multi-line UI
+  // copy where "Player (Alliance)" and the status are on separate lines.
+  const entryRx = new RegExp(
+    `([^\\n]{1,220}?)\\s*\\(([^)]+)\\)\\s*(?:${STATUS_CAP})([\\s\\S]*?)`
+    + `(?=(?:[^\\n]{1,220}?\\s*\\([^)]+\\)\\s*(?:${STATUS_NOCAP}))|Rules\\s*Terms\\s*Privacy|$)`,
+    'gi',
+  );
 
   const entries: FleetScanEntry[] = [];
   let match = entryRx.exec(text);
@@ -544,7 +553,7 @@ export function parseFleetScanInput(rawInput: string, defs: GameDefs): FleetScan
   }
 
   if (entries.length === 0) {
-    warnings.push('No fleet scan entries detected. Paste the Fleet Scan Result page — each fleet needs a "Player (Alliance)" line followed by "Arriving in N turns".');
+    warnings.push('No fleet scan entries detected. Paste the Fleet Scan Result page — each fleet needs a "Player (Alliance)" line followed by a status line ("Arriving in N turns" or "Waiting at planet").');
   }
 
   const aggregates = aggregateFleetScan(entries, defs.shipsById);

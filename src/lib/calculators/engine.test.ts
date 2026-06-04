@@ -250,6 +250,61 @@ Privacy`;
     expect(azz?.fleets).toBe(2);
     expect(azz?.units.fighter).toBe(1052); // 300 + 752
   });
+
+  test('captures "Waiting at planet" fleets and skips the planet owner header line', () => {
+    // New UI: a "Player (Alliance)\nOwned" planet owner line precedes the fleets,
+    // and some fleets show "Waiting at planet" instead of "Arriving in N turns".
+    const input = `Fleet Scan Result
+White Mustang
+2:395:2971
+Turn 585
+Llama Del Rey (Operation Epic Furry)
+Owned
+Allied
+Hostile
+FighterFighter
+0
+16,685
+0
+Waiting and incoming fleets
+[HMS] Happy Entrance
+Don Marco (Operation Epic Furry)
+Waiting at planet
+1,783 x Fighter
+426 x Bomber
+234 x Frigate
+Resource Evac #23
+Llama Del Rey (Operation Epic Furry)
+Waiting at planet
+1 x Freighter
+Blurb
+Llama Del Rey (Operation Epic Furry)
+Arriving in 6 turns
+1 x Freighter
+Rules
+Terms
+Privacy`;
+
+    const parsed = parseFleetScanInput(input, defs);
+
+    expect(parsed.warnings).toHaveLength(0);
+    // 3 real fleets — the planet owner ("Owned") line must NOT become an entry.
+    expect(parsed.entries).toHaveLength(3);
+
+    const waiting = parsed.entries.find((e) => e.fleetName === 'Don Marco');
+    expect(waiting).toBeDefined();
+    expect(waiting?.arrivalTurns).toBeNull();
+    expect(waiting?.units.fighter).toBe(1783);
+    expect(waiting?.units.bomber).toBe(426);
+    expect(waiting?.units.frigate).toBe(234);
+
+    const don = parsed.byPlayer.find((p) => p.label === 'Don Marco');
+    expect(don?.fleets).toBe(1);
+
+    const llama = parsed.byPlayer.find((p) => p.label === 'Llama Del Rey');
+    expect(llama?.fleets).toBe(2); // Resource Evac (waiting) + Blurb (arriving)
+    expect(llama?.units.freighter).toBe(2);
+  });
 });
 
 describe('parseCombatScanInput', () => {
