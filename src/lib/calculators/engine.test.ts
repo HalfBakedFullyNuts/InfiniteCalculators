@@ -556,4 +556,41 @@ PlayerB (AllianceB)
     expect(parsed.attackers.unitsLost.bomber).toBe(50);
     expect(parsed.defenders.unitsLost.frigate).toBe(180);
   });
+
+  test('partition-based side assignment correctly splits multi-player battle', () => {
+    // 5 players (3 attackers NOVA, 2 defenders AXIS). The old per-player min-overlap
+    // heuristic mis-assigns Lord_Vega as attacker because his fleet fits inside
+    // both the Owned and Hostile columns. The 2^n partition search picks the
+    // unique zero-error split.
+    const raw = readFileSync(resolve(__dirname, '../../test/fixtures/scans/battle_complex.txt'), 'utf8');
+    const parsed = parseCombatScanInput(raw, defs);
+
+    expect(parsed.warnings).toHaveLength(0);
+    expect(parsed.fleets).toHaveLength(5);
+
+    const sides = Object.fromEntries(parsed.fleets.map((f) => [f.player, f.side]));
+    expect(sides['Grand_Admiral']).toBe('defender');
+    expect(sides['Lord_Vega']).toBe('defender');
+    expect(sides['Commander_Rex']).toBe('attacker');
+    expect(sides['Admiral_Kira']).toBe('attacker');
+    expect(sides['Captain_Storm']).toBe('attacker');
+
+    // Both sides committed fleet and took losses
+    expect(parsed.attackers.weightedCostBefore).toBeGreaterThan(0);
+    expect(parsed.defenders.weightedCostBefore).toBeGreaterThan(0);
+    expect(parsed.attackers.totalUnitsLost).toBeGreaterThan(0);
+    expect(parsed.defenders.totalUnitsLost).toBeGreaterThan(0);
+
+    // Attackers won the trade: they lost less % of their fleet
+    const atkPct = parsed.attackers.weightedCostLost / parsed.attackers.weightedCostBefore;
+    const defPct = parsed.defenders.weightedCostLost / parsed.defenders.weightedCostBefore;
+    expect(atkPct).toBeLessThan(defPct);
+
+    // Battle report rows populated
+    expect(parsed.battleReport?.rows.length).toBeGreaterThan(0);
+    const fighterRow = parsed.battleReport?.rows.find((r) => r.shipId === 'fighter');
+    expect(fighterRow?.ownedBefore).toBe(3200);
+    expect(fighterRow?.ownedAfter).toBe(500);
+    expect(fighterRow?.hostileBefore).toBe(3500);
+  });
 });

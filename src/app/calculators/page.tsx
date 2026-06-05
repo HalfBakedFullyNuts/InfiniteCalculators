@@ -520,29 +520,42 @@ function CombatOutput({ combatScan, shipsById }: { combatScan: CombatScanParseRe
             </tr>
           </thead>
           <tbody>
-            {[
-              ['Fleet committed (W)', formatHumanNumber(attackers.weightedCostBefore), formatHumanNumber(defenders.weightedCostBefore)],
-              ['Fleet committed (Metal)', formatHumanNumber(attackers.totalCostBefore.metal), formatHumanNumber(defenders.totalCostBefore.metal)],
-              ['Fleet committed (Mineral)', formatHumanNumber(attackers.totalCostBefore.mineral), formatHumanNumber(defenders.totalCostBefore.mineral)],
-              ['Score committed', formatHumanNumber(attackers.totalScoreBefore), formatHumanNumber(defenders.totalScoreBefore)],
-              null,
-              ['Fleet lost (W)', formatHumanNumber(attackers.weightedCostLost), formatHumanNumber(defenders.weightedCostLost)],
-              ['Fleet lost (Metal)', formatHumanNumber(attackers.totalCostLost.metal), formatHumanNumber(defenders.totalCostLost.metal)],
-              ['Fleet lost (Mineral)', formatHumanNumber(attackers.totalCostLost.mineral), formatHumanNumber(defenders.totalCostLost.mineral)],
-              ['Score lost', formatHumanNumber(attackers.totalScoreLost), formatHumanNumber(defenders.totalScoreLost)],
-              ['% of fleet lost', atkPct, defPct],
-            ].map((row, i) => {
-              if (row === null) return <tr key={`sep-${i}`}><td colSpan={3} style={{ padding: '2px 0', background: 'var(--br)', height: 1 }} /></tr>;
-              const [label, atkVal, defVal] = row as string[];
-              const isLoss = label.includes('lost');
-              return (
-                <tr key={label}>
-                  <td style={{ color: 'var(--t3)' }}>{label}</td>
-                  <td style={{ color: isLoss && atkVal !== '0' && atkVal !== '—' ? 'var(--r-mineral)' : undefined }}>{atkVal}</td>
-                  <td style={{ color: isLoss && defVal !== '0' && defVal !== '—' ? 'var(--r-mineral)' : undefined }}>{defVal}</td>
-                </tr>
-              );
-            })}
+            {(() => {
+              // Pre-compute the broken-out score contributions
+              const aMScore = (side: typeof attackers) => side.totalCostBefore.metal;       // ×1.0
+              const aMinScore = (side: typeof attackers) => side.totalCostBefore.mineral * 1.5; // ×1.5
+              const lMScore  = (side: typeof attackers) => side.totalCostLost.metal;
+              const lMinScore = (side: typeof attackers) => side.totalCostLost.mineral * 1.5;
+              type Row = [string, string, string, boolean?];
+              const rows: (Row | null)[] = [
+                ['Metal committed', formatHumanNumber(attackers.totalCostBefore.metal),   formatHumanNumber(defenders.totalCostBefore.metal)],
+                ['Mineral committed', formatHumanNumber(attackers.totalCostBefore.mineral), formatHumanNumber(defenders.totalCostBefore.mineral)],
+                ['Metal score (W ×1.0)', formatHumanNumber(aMScore(attackers)),   formatHumanNumber(aMScore(defenders))],
+                ['Mineral score (W ×1.5)', formatHumanNumber(aMinScore(attackers)), formatHumanNumber(aMinScore(defenders))],
+                ['Ship score pts', formatHumanNumber(attackers.totalScoreBefore),   formatHumanNumber(defenders.totalScoreBefore)],
+                ['Total weighted (W)', formatHumanNumber(attackers.weightedCostBefore), formatHumanNumber(defenders.weightedCostBefore)],
+                null,
+                ['Metal lost', formatHumanNumber(attackers.totalCostLost.metal),   formatHumanNumber(defenders.totalCostLost.metal),   true],
+                ['Mineral lost', formatHumanNumber(attackers.totalCostLost.mineral), formatHumanNumber(defenders.totalCostLost.mineral), true],
+                ['Metal score (W ×1.0)', formatHumanNumber(lMScore(attackers)),    formatHumanNumber(lMScore(defenders)),   true],
+                ['Mineral score (W ×1.5)', formatHumanNumber(lMinScore(attackers)),  formatHumanNumber(lMinScore(defenders)),  true],
+                ['Ship score pts', formatHumanNumber(attackers.totalScoreLost),    formatHumanNumber(defenders.totalScoreLost), true],
+                ['Total weighted (W)', formatHumanNumber(attackers.weightedCostLost), formatHumanNumber(defenders.weightedCostLost), true],
+                ['% of fleet lost', atkPct, defPct, true],
+              ];
+              return rows.map((row, i) => {
+                if (row === null) return <tr key={`sep-${i}`}><td colSpan={3} style={{ padding: '2px 0', background: 'var(--br)', height: 1 }} /></tr>;
+                const [label, atkVal, defVal, isLoss] = row;
+                const red = (v: string) => isLoss && v !== '0' && v !== '0.0%' && v !== '—' ? 'var(--r-mineral)' : undefined;
+                return (
+                  <tr key={`${label}-${i}`}>
+                    <td style={{ color: 'var(--t3)' }}>{label}</td>
+                    <td style={{ color: red(atkVal) }}>{atkVal}</td>
+                    <td style={{ color: red(defVal) }}>{defVal}</td>
+                  </tr>
+                );
+              });
+            })()}
           </tbody>
         </table>
       </div>

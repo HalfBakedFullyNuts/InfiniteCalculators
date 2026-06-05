@@ -2208,31 +2208,69 @@ function parseBattleFleetSection(lines: string[], shipNameToId: Record<string, s
   return fleets;
 }
 
-// Assign each fleet to attacker or defender by comparing per-player ship totals
-// against the owned (defender) and hostile (attacker) columns from the summary.
+// Score how well a given defender set explains the owned/hostile columns.
+// Lower is better (0 = perfect match). Tries all 2^n partitions for n ≤ 12
+// and falls back to the per-player min-heuristic for larger groups.
+function partitionScore(
+  defSet: Set<string>,
+  players: string[],
+  playerCounts: Map<string, Record<string, number>>,
+  owned: Record<string, number>,
+  hostile: Record<string, number>,
+): number {
+  const defSum: Record<string, number> = {};
+  const atkSum: Record<string, number> = {};
+  for (const p of players) {
+    const counts = playerCounts.get(p) ?? {};
+    const target = defSet.has(p) ? defSum : atkSum;
+    for (const [id, c] of Object.entries(counts)) target[id] = (target[id] || 0) + c;
+  }
+  let err = 0;
+  const ids = new Set([...Object.keys(owned), ...Object.keys(hostile)]);
+  for (const id of ids) {
+    err += Math.abs((defSum[id] || 0) - (owned[id] || 0));
+    err += Math.abs((atkSum[id] || 0) - (hostile[id] || 0));
+  }
+  return err;
+}
+
+// Assign each fleet to attacker or defender. Uses a full 2^n partition search
+// (capped at n=12) so that multi-player battles are correctly split even when
+// any single player's fleet fits within both the owned and hostile columns.
 function assignBattleReportSides(
   fleets: BattleFleet[],
   ownedBefore: Record<string, number>,
   hostileBefore: Record<string, number>,
 ): CombatFleetEntry[] {
-  const playerBefore = new Map<string, Record<string, number>>();
+  const playerCounts = new Map<string, Record<string, number>>();
   for (const fleet of fleets) {
-    const acc = playerBefore.get(fleet.player) || {};
-    for (const [id, count] of Object.entries(fleet.before)) {
-      acc[id] = (acc[id] || 0) + count;
-    }
-    playerBefore.set(fleet.player, acc);
+    const acc = playerCounts.get(fleet.player) ?? {};
+    for (const [id, c] of Object.entries(fleet.before)) acc[id] = (acc[id] || 0) + c;
+    playerCounts.set(fleet.player, acc);
   }
 
+  const players = Array.from(playerCounts.keys());
+  const n = players.length;
   const playerSide = new Map<string, 'attacker' | 'defender'>();
-  for (const [player, counts] of playerBefore.entries()) {
-    let ownedScore = 0;
-    let hostileScore = 0;
-    for (const [id, count] of Object.entries(counts)) {
-      ownedScore += Math.min(count, ownedBefore[id] || 0);
-      hostileScore += Math.min(count, hostileBefore[id] || 0);
+
+  if (n <= 12) {
+    let bestMask = 0, bestScore = Infinity;
+    for (let mask = 0; mask < (1 << n); mask++) {
+      const defSet = new Set(players.filter((_, i) => mask & (1 << i)));
+      const s = partitionScore(defSet, players, playerCounts, ownedBefore, hostileBefore);
+      if (s < bestScore) { bestScore = s; bestMask = mask; }
     }
-    playerSide.set(player, hostileScore >= ownedScore ? 'attacker' : 'defender');
+    players.forEach((p, i) => playerSide.set(p, (bestMask & (1 << i)) ? 'defender' : 'attacker'));
+  } else {
+    // Fallback for very large battles: per-player min-overlap heuristic.
+    for (const [p, counts] of playerCounts.entries()) {
+      let os = 0, hs = 0;
+      for (const [id, c] of Object.entries(counts)) {
+        os += Math.min(c, ownedBefore[id] || 0);
+        hs += Math.min(c, hostileBefore[id] || 0);
+      }
+      playerSide.set(p, hs >= os ? 'attacker' : 'defender');
+    }
   }
 
   return fleets.map((fleet) => ({
