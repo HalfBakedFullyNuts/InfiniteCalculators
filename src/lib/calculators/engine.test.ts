@@ -1,3 +1,5 @@
+import { readFileSync } from 'fs';
+import { resolve } from 'path';
 import { describe, expect, test } from 'vitest';
 import gameDataRaw from '../game/game_data.json';
 import { buildGameDefs, formatFleetOverviewAsDiscord, formatFleetScanAsDiscord, parseFleetOverviewInput, parseFleetScanInput, parseCombatScanInput } from './engine';
@@ -372,6 +374,37 @@ Privacy`;
     expect(parsed.entries[0].units.bomber).toBe(426);
     // Multi-word ship name as the leading prefix must win over a shorter one.
     expect(parsed.entries[0].units.invasion_ship).toBe(234);
+  });
+
+  test('count-first "N x Ship" rows extract count and name correctly', () => {
+    // Guards the parseCountLines branch that a production minifier silently broke
+    // (it had inlined `patterns[0]` as a fresh regex literal, making the
+    // `pattern === patterns[0]` reference check always false and swapping
+    // count/name, which zeroed out every production parse).
+    const input = `Waiting and incoming fleets
+Strike
+Mr. Bear (Operation Epic Furry)
+Arriving in 3 turns
+1,335 x Fighter
+597 x Bomber
+80 x Frigate`;
+    const parsed = parseFleetScanInput(input, defs);
+    expect(parsed.entries).toHaveLength(1);
+    expect(parsed.entries[0].units.fighter).toBe(1335);
+    expect(parsed.entries[0].units.bomber).toBe(597);
+    expect(parsed.entries[0].units.frigate).toBe(80);
+  });
+
+  test('parses the real captured full-page scan fixture (regression for prod failure)', () => {
+    // Byte-exact clipboard capture of the live scan that reported zero entries.
+    const raw = readFileSync(resolve(__dirname, '../../test/fixtures/scans/fleetscan_failing.txt'), 'utf8');
+    const parsed = parseFleetScanInput(raw, defs);
+    expect(parsed.warnings).toHaveLength(0);
+    expect(parsed.entries).toHaveLength(26);
+    expect(parsed.byPlayer.length).toBe(13);
+    const alliance = parsed.byAlliance.find((a) => a.label === 'Operation Epic Furry');
+    expect(alliance?.fleets).toBe(26);
+    expect(alliance?.units.fighter).toBeGreaterThan(0);
   });
 });
 

@@ -1,0 +1,322 @@
+﻿
+INFINITE · CONFLICT
+Command
+Planets
+Fleets
+Radar
+Navigation
+Research
+Alliances
+News
+Turn
+594
+· Next
+52:04
+
+Llama Del Rey
+← Back to News
+
+Fleet Scan Result
+/images/planets/20.jpg
+White Mustang
+2:395:2971
+Turn 585
+Llama Del Rey (Operation Epic Furry)
+Owned
+Allied
+Hostile
+FighterFighter
+0
+16,685
+0
+BomberBomber
+0
+5,750
+0
+FrigateFrigate
+0
+1,216
+0
+FreighterFreighter
+0
+136
+0
+Invasion ShipInvasion Ship
+0
+34
+0
+Outpost ShipOutpost Ship
+0
+1
+0
+Waiting and incoming fleets
+[HMS] Happy Entrance
+Don Marco (Operation Epic Furry)
+Waiting at planet
+Fighter
+1,783 x Fighter
+Bomber
+426 x Bomber
+Frigate
+234 x Frigate
+Freighter
+7 x Freighter
+Invasion Ship
+4 x Invasion Ship
+Resource Evac #23
+Llama Del Rey (Operation Epic Furry)
+Waiting at planet
+Freighter
+1 x Freighter
+Blurb
+Llama Del Rey (Operation Epic Furry)
+Arriving in 6 turns
+Freighter
+1 x Freighter
+Picking up
+Mr. Bear (Operation Epic Furry)
+Arriving in 8 turns
+Fighter
+700 x Fighter
+Bomber
+350 x Bomber
+Frigate
+81 x Frigate
+Invasion Ship
+1 x Invasion Ship
+2nd Wave
+Azz (Operation Epic Furry)
+Arriving in 19 turns
+Fighter
+1,064 x Fighter
+Bomber
+222 x Bomber
+Frigate
+26 x Frigate
+Freighter
+6 x Freighter
+ready 4 party
+Azz (Operation Epic Furry)
+Arriving in 19 turns
+Fighter
+502 x Fighter
+Bomber
+110 x Bomber
+Frigate
+1 x Frigate
+Freighter
+2 x Freighter
+wann geht es los
+Azz (Operation Epic Furry)
+Arriving in 19 turns
+Fighter
+50 x Fighter
+Bomber
+63 x Bomber
+Frigate
+1 x Frigate
+Freighter
+3 x Freighter
+WF BETA
+Vintage Vinyl (Operation Epic Furry)
+Arriving in 21 turns
+Fighter
+742 x Fighter
+Bomber
+57 x Bomber
+Frigate
+1 x Frigate
+Invasion Ship
+1 x Invasion Ship
+Outpost Ship
+1 x Outpost Ship
+Mjölnir
+Emperor Sport of Radica (Operation Epic Furry)
+Arriving in 22 turns
+Fighter
+252 x Fighter
+Bomber
+150 x Bomber
+Frigate
+70 x Frigate
+Freighter
+30 x Freighter
+Invasion Ship
+2 x Invasion Ship
+Epic Styling
+High Chancellor of Radiance (Operation Epic Furry)
+Arriving in 22 turns
+Fighter
+1,500 x Fighter
+Bomber
+875 x Bomber
+Frigate
+1 x Frigate
+Freighter
+12 x Freighter
+Invasion Ship
+2 x Invasion Ship
+BugReign
+Ladybug Gaga (Operation Epic Furry)
+Arriving in 22 turns
+Fighter
+1,900 x Fighter
+Bomber
+591 x Bomber
+Frigate
+10 x Frigate
+Freighter
+14 x Freighter
+Invasion Ship
+1 x Invasion Ship
+TRACERT
+Zhe Tiny (Operation Epic Furry)
+Arriving in 22 turns
+Fighter
+80 x Fighter
+Bomber
+200 x Bomber
+Frigate
+40 x Frigate
+Freighter
+10 x Freighter
+Haircraft Carrier Stroke Group
+Llama Del Rey (Operation Epic Furry)
+Arriving in 22 turns
+Fighter
+1,744 x Fighter
+Bomber
+168 x Bomber
+Frigate
+144 x Frigate
+Freighter
+6 x Freighter
+Invasion Ship
+1 x Invasion Ship
+Mjolnir 2
+Emperor Sport of Radica (Operation Epic Furry)
+Arriving in 22 turns
+Fighter
+200 x Fighter
+Bomber
+125 x Bomber
+Frigate
+70 x Frigate
+Invasion Ship
+2 x Invasion Ship
+Mjolnir 3
+Emperor Sport of Radica (Operation Epic Furry)
+Arriving in 22 turns
+Fighter
+210 x Fighter
+Bomber
+130 x Bomber
+Frigate
+77 x Frigate
+Invasion Ship
+1 x Invasion Ship
+Jason On A Stick
+Strait Of Wolves (Operation Epic Furry)
+Arriving in 22 turns
+Fighter
+242 x Fighter
+Bomber
+50 x Bomber
+Frigate
+15 x Frigate
+Freighter
+3 x Freighter
+Invasion Ship
+1 x Invasion Ship
+Bleeding Horror
+Princess Donut (Operation Epic Furry)
+Arriving in 22 turns
+Frigate
+1 x Frigate
+Freighter
+19 x Freighter
+Invasion Ship
+3 x Invasion Ship
+Picking up
+Mr. Bear (Operation Epic Furry)
+Arriving in 22 turns
+Fighter
+747 x Fighter
+Bomber
+485 x Bomber
+Frigate
+57 x Frigate
+Freighter
+2 x Freighter
+Hms hello motto
+Don Marco (Operation Epic Furry)
+Arriving in 22 turns
+Fighter
+1,286 x Fighter
+Bomber
+200 x Bomber
+Frigate
+100 x Frigate
+Freighter
+1 x Freighter
+and more
+tavikas (Operation Epic Furry)
+Arriving in 22 turns
+Fighter
+1,200 x Fighter
+Bomber
+800 x Bomber
+Frigate
+100 x Frigate
+Freighter
+4 x Freighter
+Charcoal
+Bear Grills (Operation Epic Furry)
+Arriving in 22 turns
+Fighter
+1,000 x Fighter
+Bomber
+400 x Bomber
+Frigate
+187 x Frigate
+Freighter
+2 x Freighter
+Invasion Ship
+3 x Invasion Ship
+WF ALPHA
+Vintage Vinyl (Operation Epic Furry)
+Arriving in 24 turns
+Fighter
+372 x Fighter
+POP
+Strait Of Wolves (Operation Epic Furry)
+Arriving in 24 turns
+Freighter
+2 x Freighter
+Pop
+Don Marco (Operation Epic Furry)
+Arriving in 25 turns
+Freighter
+8 x Freighter
+little more
+tavikas (Operation Epic Furry)
+Arriving in 25 turns
+Fighter
+520 x Fighter
+Freighter
+1 x Freighter
+Invasion Ship
+12 x Invasion Ship
+Picking up
+Mr. Bear (Operation Epic Furry)
+Arriving in 25 turns
+Fighter
+591 x Fighter
+Bomber
+348 x Bomber
+Freighter
+2 x Freighter
+Rules
+Terms
+Privacy
+© 2026 infiniteconflict.com

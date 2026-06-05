@@ -361,29 +361,25 @@ function parseCountLines(
 ): Record<string, number> {
   const out: Record<string, number> = {};
 
-  const patterns: RegExp[] = [
-    /^(\d[\d,]*)\s*[x×]\s+(.+)$/i,
-    /^(.+?)\s+[x×]\s*(\d[\d,]*)$/i,
+  // countFirst carries which capture group holds the count, so we never rely on
+  // object-reference identity of the regex (`pattern === patterns[0]`). Production
+  // minifiers inline `patterns[0]` as a fresh regex literal, making that comparison
+  // always false and silently swapping count/name — which zeroed out every parse.
+  const patterns: Array<{ re: RegExp; countFirst: boolean }> = [
+    { re: /^(\d[\d,]*)\s*[x×]\s+(.+)$/i, countFirst: true },
+    { re: /^(.+?)\s+[x×]\s*(\d[\d,]*)$/i, countFirst: false },
   ];
 
   for (const lineRaw of lines) {
     const line = lineRaw.trim();
-    for (const pattern of patterns) {
-      const match = line.match(pattern);
+    for (const { re, countFirst } of patterns) {
+      const match = line.match(re);
       if (!match) {
         continue;
       }
 
-      let countToken = '';
-      let nameToken = '';
-
-      if (pattern === patterns[0]) {
-        countToken = match[1];
-        nameToken = match[2];
-      } else {
-        countToken = match[2];
-        nameToken = match[1];
-      }
+      const countToken = countFirst ? match[1] : match[2];
+      const nameToken = countFirst ? match[2] : match[1];
 
       const normalizedName = safeLower(nameToken.replace(/\(.*\)/g, '').trim());
       const id = resolveKnownName(normalizedName, knownNameToId);
