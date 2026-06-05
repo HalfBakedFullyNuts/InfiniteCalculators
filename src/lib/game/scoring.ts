@@ -30,10 +30,17 @@ const TURNS_DIVISOR = 4;
  *
  * Formula (mirrors PHP):
  *   weightedCost = metal×1 + mineral×1.5 + food×2 + energy×2
- *   assetScore   = round((weightedCost × 1.5) / 1000) × (durationTurns / 4)
+ *   assetScore   = round(round((weightedCost × 1.5) / 1000) × (durationTurns / 4))
  *
- * This is the canonical per-item score that can replace hardcoded score_value
- * fields in game_data.json when the scoring migration is complete.
+ * The outer round() ensures an integer result when durationTurns/4 is fractional
+ * (e.g. 6-turn items produce a ×1.5 factor).
+ *
+ * ⚠️  IMPORTANT — score_value coupling:
+ * All score_value fields in game_data.json (structures and ships) are derived from
+ * this formula. If RESOURCE_SCORE_VALUES, COST_SPREAD, SCORE_DIVISOR, or
+ * TURNS_DIVISOR change, re-run the derivation script and update every score_value
+ * in game_data.json to match. Population units (worker/soldier/scientist) are
+ * intentionally excluded — their values are balance-driven, not formula-derived.
  */
 export function computeItemAssetScore(def: ItemDefinition): number {
   const costs = def.costsPerUnit;
@@ -43,7 +50,7 @@ export function computeItemAssetScore(def: ItemDefinition): number {
     (costs.food    ?? 0) * RESOURCE_SCORE_VALUES.food    +
     (costs.energy  ?? 0) * RESOURCE_SCORE_VALUES.energy;
 
-  return Math.round((weightedCost * COST_SPREAD) / SCORE_DIVISOR) * (def.durationTurns / TURNS_DIVISOR);
+  return Math.round(Math.round((weightedCost * COST_SPREAD) / SCORE_DIVISOR) * (def.durationTurns / TURNS_DIVISOR));
 }
 
 /**

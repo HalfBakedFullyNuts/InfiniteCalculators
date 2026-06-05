@@ -66,10 +66,24 @@ export interface FleetScanSummary {
   alliances?: string[];
 }
 
+export interface FleetScanEtaRow {
+  etaTurns: number | null;
+  units: Record<string, number>;
+  fleetCount: number;
+}
+
+export interface FleetScanEtaTable {
+  alliance: string;
+  rows: FleetScanEtaRow[];
+  totals: Record<string, number>;
+  shipIds: string[];
+}
+
 export interface FleetScanParseResult {
   entries: FleetScanEntry[];
   byPlayer: FleetScanSummary[];
   byAlliance: FleetScanSummary[];
+  etaTables: FleetScanEtaTable[];
   warnings: string[];
 }
 
@@ -580,10 +594,49 @@ export function parseFleetScanInput(rawInput: string, defs: GameDefs): FleetScan
 
   const aggregates = aggregateFleetScan(entries, defs.shipsById);
 
+  // Build ETA tables: one per alliance, rows sorted by ETA, columns = ships present
+  const allianceEtaMap = new Map<string, Map<number | null, { units: Record<string, number>; fleetCount: number }>>();
+  for (const entry of entries) {
+    if (!allianceEtaMap.has(entry.alliance)) allianceEtaMap.set(entry.alliance, new Map());
+    const etaMap = allianceEtaMap.get(entry.alliance)!;
+    const key = entry.arrivalTurns;
+    if (!etaMap.has(key)) etaMap.set(key, { units: {}, fleetCount: 0 });
+    const bucket = etaMap.get(key)!;
+    bucket.fleetCount++;
+    for (const [shipId, count] of Object.entries(entry.units)) {
+      bucket.units[shipId] = (bucket.units[shipId] || 0) + count;
+    }
+  }
+
+  const etaTables: FleetScanEtaTable[] = [];
+  for (const [alliance, etaMap] of allianceEtaMap.entries()) {
+    const rows: FleetScanEtaRow[] = Array.from(etaMap.entries())
+      .sort(([a], [b]) => {
+        if (a === null && b === null) return 0;
+        if (a === null) return 1;
+        if (b === null) return -1;
+        return (a as number) - (b as number);
+      })
+      .map(([etaTurns, { units, fleetCount }]) => ({ etaTurns, units, fleetCount }));
+
+    const totals: Record<string, number> = {};
+    const shipIdSet = new Set<string>();
+    for (const row of rows) {
+      for (const [id, count] of Object.entries(row.units)) {
+        totals[id] = (totals[id] || 0) + count;
+        shipIdSet.add(id);
+      }
+    }
+    const shipIds = Object.keys(defs.shipsById).filter((id) => shipIdSet.has(id));
+    etaTables.push({ alliance, rows, totals, shipIds });
+  }
+  etaTables.sort((a, b) => Object.values(b.totals).reduce((s, v) => s + v, 0) - Object.values(a.totals).reduce((s, v) => s + v, 0));
+
   return {
     entries,
     byPlayer: aggregates.byPlayer,
     byAlliance: aggregates.byAlliance,
+    etaTables,
     warnings,
   };
 }
@@ -683,6 +736,21 @@ export function formatFleetScanAsDiscord(result: FleetScanParseResult, shipIds: 
     '',
     ...fleetScanTable('By Player', 'Player', result.byPlayer, shipIds, 22),
   ];
+
+  for (const table of result.etaTables) {
+    const headers = ['ETA', ...table.shipIds.map((id) => idLabelShort(id))];
+    const rows: string[][] = table.rows.map((row) => [
+      row.etaTurns !== null ? `${row.etaTurns}t` : 'Wait',
+      ...table.shipIds.map((id) => row.units[id] ? formatHumanNumber(row.units[id]) : '—'),
+    ]);
+    rows.push(['Total', ...table.shipIds.map((id) => table.totals[id] ? formatHumanNumber(table.totals[id]) : '—')]);
+    const widths = headers.map((h, i) => Math.max(h.length, ...rows.map((r) => (r[i] || '').length)));
+    const renderRow = (cells: string[]) => cells.map((c, i) => c.padEnd(widths[i])).join(' | ');
+    const divider = widths.map((w) => '-'.repeat(w)).join('-+-');
+    bodyLines.push('');
+    bodyLines.push(`ETA — ${table.alliance}`);
+    bodyLines.push(renderRow(headers), divider, ...rows.map(renderRow));
+  }
 
   return `\`\`\`\n${bodyLines.join('\n').trim()}\n\`\`\``;
 }
@@ -2572,57 +2640,123 @@ export function parseCombatScanInput(rawInput: string, defs: GameDefs): CombatSc
   return { fleets, attackers, defenders, byPlayer, tradeRatio, shipIds, warnings, battleReport };
 }
 
+function combatSideCosts(
+  rows: BattleReportShipRow[],
+  getCount: (r: BattleReportShipRow) => [number, number],
+  shipsById: Record<string, ShipDef>,
+): { metBef: number; minBef: number; scoreBef: number; metLost: number; minLost: number; scoreLost: number; wBef: number; wLost: number } {
+  let metBef = 0, minBef = 0, scoreBef = 0, metLost = 0, minLost = 0, scoreLost = 0, wBef = 0, wLost = 0;
+  for (const row of rows) {
+    const ship = shipsById[row.shipId];
+    if (!ship) continue;
+    const [bef, aft] = getCount(row);
+    const lost = Math.max(0, bef - aft);
+    metBef += ship.costs.metal * bef;
+    minBef += ship.costs.mineral * bef;
+    scoreBef += ship.scoreValue * bef;
+    metLost += ship.costs.metal * lost;
+    minLost += ship.costs.mineral * lost;
+    scoreLost += ship.scoreValue * lost;
+    wBef += (ship.costs.metal + ship.costs.mineral * 1.5) * bef;
+    wLost += (ship.costs.metal + ship.costs.mineral * 1.5) * lost;
+  }
+  return { metBef, minBef, scoreBef, metLost, minLost, scoreLost, wBef, wLost };
+}
+
 export function formatCombatScanAsDiscord(result: CombatScanParseResult, shipsById: Record<string, ShipDef>): string {
   if (result.fleets.length === 0) return '';
 
   const { attackers, defenders, tradeRatio, battleReport } = result;
-  const atkPct = attackers.weightedCostBefore > 0
-    ? (attackers.weightedCostLost / attackers.weightedCostBefore * 100).toFixed(1)
-    : '—';
-  const defPct = defenders.weightedCostBefore > 0
-    ? (defenders.weightedCostLost / defenders.weightedCostBefore * 100).toFixed(1)
-    : '—';
-
   const winnerSide = tradeRatio < 0.95 ? 'Attackers' : tradeRatio > 1.05 ? 'Defenders' : 'Draw';
   const ratio = Number.isFinite(tradeRatio) && tradeRatio < 99 ? tradeRatio.toFixed(2) : '∞';
+  const fmtPair = (a: number, b: number) => `${formatHumanNumber(a)} / ${formatHumanNumber(b)}`;
+  const pctStr = (lost: number, bef: number) => bef > 0 ? `${(lost / bef * 100).toFixed(1)}%` : '—';
 
   const parts: string[] = [];
 
-  // Battle report table (native format only)
+  // Battle report table — only show Allied columns when allied ships are present
   if (battleReport && battleReport.rows.length > 0) {
+    const hasAllied = battleReport.rows.some((r) => r.alliedBefore > 0 || r.alliedAfter > 0);
     const ownedLabel = `Owned (${battleReport.ownedPlayers.join(', ')})`;
     const hostileLabel = `Hostile (${battleReport.hostilePlayers.join(', ')})`;
     const tableRows = battleReport.rows.map((r) => {
       const oLost = r.ownedBefore - r.ownedAfter;
-      const hLost = r.hostileBefore - r.hostileAfter;
       const aLost = r.alliedBefore - r.alliedAfter;
-      return [
+      const hLost = r.hostileBefore - r.hostileAfter;
+      const row: string[] = [
         shipsById[r.shipId]?.name ?? r.shipId,
-        String(r.ownedBefore), String(r.ownedAfter), oLost > 0 ? `-${oLost}` : '—',
-        String(r.alliedBefore), String(r.alliedAfter), aLost > 0 ? `-${aLost}` : '—',
-        String(r.hostileBefore), String(r.hostileAfter), hLost > 0 ? `-${hLost}` : '—',
+        String(r.ownedBefore || '—'), String(r.ownedAfter || '—'), oLost > 0 ? `-${oLost}` : '—',
       ];
+      if (hasAllied) row.push(String(r.alliedBefore || '—'), String(r.alliedAfter || '—'), aLost > 0 ? `-${aLost}` : '—');
+      row.push(String(r.hostileBefore || '—'), String(r.hostileAfter || '—'), hLost > 0 ? `-${hLost}` : '—');
+      return row;
     });
-    const headers = ['Ship', 'O.Bef', 'O.Aft', 'O.Lost', 'A.Bef', 'A.Aft', 'A.Lost', 'H.Bef', 'H.Aft', 'H.Lost'];
-    parts.push(`Ships  |  ${ownedLabel}  |  Allied  |  ${hostileLabel}`);
+    const headers = ['Ship', 'O.Bef', 'O.Aft', 'O.Lost'];
+    if (hasAllied) headers.push('A.Bef', 'A.Aft', 'A.Lost');
+    headers.push('H.Bef', 'H.Aft', 'H.Lost');
+    parts.push(`Ships  |  ${ownedLabel}${hasAllied ? '  |  Allied' : ''}  |  ${hostileLabel}`);
     parts.push(formatDiscordTable('', headers, tableRows));
   }
 
-  // Trade analysis table
-  const tradeRows: (string | number)[][] = [
-    ['Players', attackers.players.join(', '), defenders.players.join(', ')],
-    ['Fleet committed (W)', formatHumanNumber(attackers.weightedCostBefore), formatHumanNumber(defenders.weightedCostBefore)],
-    ['Fleet lost (W)', formatHumanNumber(attackers.weightedCostLost), formatHumanNumber(defenders.weightedCostLost)],
-    ['% of fleet lost', `${atkPct}%`, `${defPct}%`],
-    ['Score committed', formatHumanNumber(attackers.totalScoreBefore), formatHumanNumber(defenders.totalScoreBefore)],
-    ['Score lost', formatHumanNumber(attackers.totalScoreLost), formatHumanNumber(defenders.totalScoreLost)],
-    ['Metal lost', formatHumanNumber(attackers.totalCostLost.metal), formatHumanNumber(defenders.totalCostLost.metal)],
-    ['Mineral lost', formatHumanNumber(attackers.totalCostLost.mineral), formatHumanNumber(defenders.totalCostLost.mineral)],
-    ['Winner', winnerSide === 'Attackers' ? '✓' : '', winnerSide === 'Defenders' ? '✓' : ''],
-    ['Trade ratio (atk/def)', ratio, ''],
-  ];
-  parts.push(formatDiscordTable('Trade Analysis', ['Metric', 'Attackers', 'Defenders (Owned)'], tradeRows));
+  // Compute per-side summaries from battle report rows when available
+  const hasAlliedTrade = battleReport?.rows.some((r) => r.alliedBefore > 0 || r.alliedAfter > 0) ?? false;
+  const ownedS = battleReport ? combatSideCosts(battleReport.rows, (r) => [r.ownedBefore, r.ownedAfter], shipsById) : null;
+  const alliedS = battleReport && hasAlliedTrade ? combatSideCosts(battleReport.rows, (r) => [r.alliedBefore, r.alliedAfter], shipsById) : null;
+  const hostileS = battleReport ? combatSideCosts(battleReport.rows, (r) => [r.hostileBefore, r.hostileAfter], shipsById) : null;
 
+  let tradeHeaders: string[];
+  let tradeRows: string[][];
+
+  if (ownedS && hostileS) {
+    type SC = { metBef: number; minBef: number; scoreBef: number; metLost: number; minLost: number; scoreLost: number; wBef: number; wLost: number };
+    const committed = (s: SC) => [fmtPair(s.metBef, s.minBef), fmtPair(s.metBef, s.minBef * 1.5), formatHumanNumber(s.scoreBef)];
+    const lost = (s: SC) => [fmtPair(s.metLost, s.minLost), fmtPair(s.metLost, s.minLost * 1.5), formatHumanNumber(s.scoreLost), pctStr(s.wLost, s.wBef)];
+
+    const oC = committed(ownedS); const oL = lost(ownedS);
+    const hC = committed(hostileS); const hL = lost(hostileS);
+    const aC = alliedS ? committed(alliedS) : null;
+    const aL = alliedS ? lost(alliedS) : null;
+
+    const mk = (lbl: string, ov: string, av: string | null, hv: string): string[] =>
+      aC ? [lbl, ov, av!, hv] : [lbl, ov, hv];
+
+    const ownedHdr = `Owned (${battleReport!.ownedPlayers.join(', ')})`;
+    const hostileHdr = `Hostile (${battleReport!.hostilePlayers.join(', ')})`;
+    tradeHeaders = ['Metric', ownedHdr, ...(aC ? ['Allied'] : []), hostileHdr];
+
+    const oWin = winnerSide === 'Defenders' ? 'Won ✓' : winnerSide === 'Draw' ? '—' : '';
+    const hWin = winnerSide === 'Attackers' ? 'Won ✓' : winnerSide === 'Draw' ? '—' : '';
+    tradeRows = [
+      mk('Resources committed', oC[0], aC?.[0] ?? null, hC[0]),
+      mk('Resource score (M/N)', oC[1], aC?.[1] ?? null, hC[1]),
+      mk('Ship score pts', oC[2], aC?.[2] ?? null, hC[2]),
+      mk('Resources lost', oL[0], aL?.[0] ?? null, hL[0]),
+      mk('Resource score lost', oL[1], aL?.[1] ?? null, hL[1]),
+      mk('Ship score pts lost', oL[2], aL?.[2] ?? null, hL[2]),
+      mk('% of fleet lost', oL[3], aL?.[3] ?? null, hL[3]),
+      mk('Winner', oWin, aC ? '' : null, hWin),
+      mk('Trade ratio (atk/def)', ratio, aC ? '' : null, ''),
+    ];
+  } else {
+    const atkPct = attackers.weightedCostBefore > 0
+      ? `${(attackers.weightedCostLost / attackers.weightedCostBefore * 100).toFixed(1)}%` : '—';
+    const defPct = defenders.weightedCostBefore > 0
+      ? `${(defenders.weightedCostLost / defenders.weightedCostBefore * 100).toFixed(1)}%` : '—';
+    tradeHeaders = ['Metric', `Attackers (${attackers.players.join(', ')})`, `Defenders (${defenders.players.join(', ')})`];
+    tradeRows = [
+      ['Resources committed', fmtPair(attackers.totalCostBefore.metal, attackers.totalCostBefore.mineral), fmtPair(defenders.totalCostBefore.metal, defenders.totalCostBefore.mineral)],
+      ['Resource score (M/N)', fmtPair(attackers.totalCostBefore.metal, attackers.totalCostBefore.mineral * 1.5), fmtPair(defenders.totalCostBefore.metal, defenders.totalCostBefore.mineral * 1.5)],
+      ['Ship score pts', formatHumanNumber(attackers.totalScoreBefore), formatHumanNumber(defenders.totalScoreBefore)],
+      ['Resources lost', fmtPair(attackers.totalCostLost.metal, attackers.totalCostLost.mineral), fmtPair(defenders.totalCostLost.metal, defenders.totalCostLost.mineral)],
+      ['Resource score lost', fmtPair(attackers.totalCostLost.metal, attackers.totalCostLost.mineral * 1.5), fmtPair(defenders.totalCostLost.metal, defenders.totalCostLost.mineral * 1.5)],
+      ['Ship score pts lost', formatHumanNumber(attackers.totalScoreLost), formatHumanNumber(defenders.totalScoreLost)],
+      ['% of fleet lost', atkPct, defPct],
+      ['Winner', winnerSide === 'Attackers' ? '✓' : '', winnerSide === 'Defenders' ? '✓' : ''],
+      ['Trade ratio (atk/def)', ratio, ''],
+    ];
+  }
+
+  parts.push(formatDiscordTable('Trade Analysis', tradeHeaders, tradeRows));
   return `\`\`\`\n${parts.join('\n\n').trim()}\n\`\`\``;
 }
 

@@ -200,7 +200,7 @@
           "id": "light_weapons_factory"
         }
       ],
-      "score_value": 5
+      "score_value": 3
     },
     {
       "id": "bomber",
@@ -235,7 +235,7 @@
           "id": "light_weapons_factory"
         }
       ],
-      "score_value": 10
+      "score_value": 14
     },
     {
       "id": "frigate",
@@ -270,7 +270,7 @@
           "id": "light_weapons_factory"
         }
       ],
-      "score_value": 25
+      "score_value": 85
     },
     {
       "id": "outpost_ship",
@@ -301,7 +301,7 @@
           "id": "shipyard"
         }
       ],
-      "score_value": 100
+      "score_value": 360
     },
     {
       "id": "invasion_ship",
@@ -336,7 +336,7 @@
           "id": "light_weapons_factory"
         }
       ],
-      "score_value": 80
+      "score_value": 312
     },
     {
       "id": "freighter",
@@ -368,7 +368,7 @@
         }
       ],
       "special": "Stores up to 120000 metal and 80000 mineral; capacity of 40000 shared for energy, food and colonists",
-      "score_value": 50
+      "score_value": 144
     },
     {
       "id": "cruiser",
@@ -403,7 +403,7 @@
           "id": "light_weapons_factory"
         }
       ],
-      "score_value": 200
+      "score_value": 1615
     },
     {
       "id": "destroyer",
@@ -438,7 +438,7 @@
           "id": "heavy_weapons_factory"
         }
       ],
-      "score_value": 100
+      "score_value": 525
     },
     {
       "id": "battleship",
@@ -473,7 +473,7 @@
           "id": "heavy_weapons_factory"
         }
       ],
-      "score_value": 800
+      "score_value": 9068
     },
     {
       "id": "command_carrier",
@@ -508,7 +508,7 @@
           "id": "heavy_weapons_factory"
         }
       ],
-      "score_value": 2000
+      "score_value": 43200
     },
     {
       "id": "merchant",
@@ -540,7 +540,7 @@
         }
       ],
       "special": "Stores up to 240000 metal and 160000 mineral; capacity of 80000 shared for energy, food and colonists",
-      "score_value": 100
+      "score_value": 360
     },
     {
       "id": "trader",
@@ -572,7 +572,7 @@
         }
       ],
       "special": "Stores up to 480000 metal and 320000 mineral; capacity of 160000 shared for energy, food and colonists",
-      "score_value": 150
+      "score_value": 648
     }
   ],
   "structures": [
@@ -626,7 +626,8 @@
         ]
       },
       "max_per_planet": 1,
-      "description": "Starting structure; provides housing and basic production."
+      "description": "Starting structure; provides housing and basic production.",
+      "score_value": 0
     },
     {
       "id": "farm",
@@ -678,7 +679,8 @@
         ],
         "effects": []
       },
-      "max_per_planet": null
+      "max_per_planet": null,
+      "score_value": 5
     },
     {
       "id": "launch_site",
@@ -730,7 +732,8 @@
         ]
       },
       "max_per_planet": 1,
-      "description": "Unlocks orbital buildings"
+      "description": "Unlocks orbital buildings",
+      "score_value": 90
     },
     {
       "id": "leisure_centre",
@@ -783,7 +786,8 @@
         ]
       },
       "max_per_planet": 1,
-      "description": "Increases pop growth by +0.5%"
+      "description": "Increases pop growth by +0.5%",
+      "score_value": 72
     },
     {
       "id": "living_quarters",
@@ -835,7 +839,8 @@
           }
         ]
       },
-      "max_per_planet": null
+      "max_per_planet": null,
+      "score_value": 21
     },
     {
       "id": "metal_mine",
@@ -887,7 +892,8 @@
         ],
         "effects": []
       },
-      "max_per_planet": null
+      "max_per_planet": null,
+      "score_value": 5
     },
     {
       "id": "mineral_extractor",
@@ -939,7 +945,8 @@
         ],
         "effects": []
       },
-      "max_per_planet": null
+      "max_per_planet": null,
+      "score_value": 5
     },
     {
       "id": "solar_generator",
@@ -985,7 +992,8 @@
         "consumption": [],
         "effects": []
       },
-      "max_per_planet": null
+      "max_per_planet": null,
+      "score_value": 5
     },
     {
       "id": "research_lab",
@@ -1042,7 +1050,8 @@
         ]
       },
       "max_per_planet": 1,
-      "description": "Unlocks scientist training"
+      "description": "Unlocks scientist training",
+      "score_value": 252
     },
     {
       "id": "comms_satellite",
@@ -1094,7 +1103,8 @@
         ]
       },
       "max_per_planet": 1,
-      "description": "Unlocks radar and scanning"
+      "description": "Unlocks radar and scanning",
+      "score_value": 198
     },
     {
       "id": "habitat",
@@ -1146,7 +1156,8 @@
           }
         ]
       },
-      "max_per_planet": null
+      "max_per_planet": null,
+      "score_value": 21
     },
     {
       "id": "shipyard",
@@ -1198,7 +1209,8 @@
         ]
       },
       "max_per_planet": 1,
-      "description": "Unlocks ship building"
+      "description": "Unlocks ship building",
+      "score_value": 432
     },
     {
       "id": "colony",
@@ -1249,7 +1261,8 @@
         ]
       },
       "max_per_planet": 1,
-      "description": "Unlocks tier 2 buildings"
+      "description": "Unlocks tier 2 buildings",
+      "score_value": 1080
     },
     {
       "id": "core_metal_mine",
@@ -1301,7 +1314,8 @@
         ],
         "effects": []
       },
-      "max_per_planet": null
+      "max_per_planet": null,
+      "score_value": 64
     },
     {
       "id": "core_mineral_extractor",
@@ -1353,7 +1367,8 @@
         ],
         "effects": []
       },
-      "max_per_planet": null
+      "max_per_planet": null,
+      "score_value": 64
     },
     {
       "id": "hydroponics_lab",
@@ -1409,7 +1424,8 @@
         ],
         "effects": []
       },
-      "max_per_planet": null
+      "max_per_planet": null,
+      "score_value": 54
     },
     {
       "id": "light_weapons_factory",
@@ -1461,7 +1477,8 @@
         ]
       },
       "max_per_planet": 1,
-      "description": "Unlocks warships and army barracks"
+      "description": "Unlocks warships and army barracks",
+      "score_value": 270
     },
     {
       "id": "solar_array",
@@ -1511,7 +1528,8 @@
         "consumption": [],
         "effects": []
       },
-      "max_per_planet": null
+      "max_per_planet": null,
+      "score_value": 54
     },
     {
       "id": "army_barracks",
@@ -1568,7 +1586,8 @@
         ]
       },
       "max_per_planet": null,
-      "description": "Unlocks soldier production"
+      "description": "Unlocks soldier production",
+      "score_value": 72
     },
     {
       "id": "hyperspace_beacon",
@@ -1625,7 +1644,8 @@
         ]
       },
       "max_per_planet": 1,
-      "description": "Reduces travel time for incoming ships"
+      "description": "Reduces travel time for incoming ships",
+      "score_value": 468
     },
     {
       "id": "hospital",
@@ -1678,7 +1698,8 @@
         ]
       },
       "max_per_planet": 1,
-      "description": "Increases pop growth by +0.5%"
+      "description": "Increases pop growth by +0.5%",
+      "score_value": 270
     },
     {
       "id": "metal_refinery",
@@ -1731,7 +1752,8 @@
         ]
       },
       "max_per_planet": 1,
-      "description": "Increases planet metal abundance by 30%"
+      "description": "Increases planet metal abundance by 30%",
+      "score_value": 1350
     },
     {
       "id": "mineral_processor",
@@ -1784,7 +1806,8 @@
         ]
       },
       "max_per_planet": 1,
-      "description": "Increases planet mineral abundance by 30%"
+      "description": "Increases planet mineral abundance by 30%",
+      "score_value": 1350
     },
     {
       "id": "food_purifier",
@@ -1837,7 +1860,8 @@
         ]
       },
       "max_per_planet": 1,
-      "description": "Increases planet food abundance by 30%"
+      "description": "Increases planet food abundance by 30%",
+      "score_value": 1350
     },
     {
       "id": "energy_booster",
@@ -1890,7 +1914,8 @@
         ]
       },
       "max_per_planet": 1,
-      "description": "Increases planet energy abundance by 30%"
+      "description": "Increases planet energy abundance by 30%",
+      "score_value": 1350
     },
     {
       "id": "metropolis",
@@ -1941,7 +1966,8 @@
         ]
       },
       "max_per_planet": 1,
-      "description": "Unlocks tier 3 buildings"
+      "description": "Unlocks tier 3 buildings",
+      "score_value": 4320
     },
     {
       "id": "space_dock",
@@ -1964,7 +1990,10 @@
       "build_requirements": {
         "workers_occupied": 240000,
         "space_cost": [
-          { "type": "orbital_space", "amount": 4 }
+          {
+            "type": "orbital_space",
+            "amount": 4
+          }
         ]
       },
       "requirements": [
@@ -1988,7 +2017,8 @@
         ]
       },
       "max_per_planet": null,
-      "description": "Allows construction of advanced capital ships"
+      "description": "Allows construction of advanced capital ships",
+      "score_value": 2592
     },
     {
       "id": "heavy_weapons_factory",
@@ -2044,7 +2074,8 @@
         ]
       },
       "max_per_planet": 1,
-      "description": "Unlocks Destroyers and Battleships"
+      "description": "Unlocks Destroyers and Battleships",
+      "score_value": 1620
     },
     {
       "id": "land_reclamation",
@@ -2075,7 +2106,8 @@
         ]
       },
       "max_per_planet": null,
-      "description": "Increases planet max ground space by 1"
+      "description": "Increases planet max ground space by 1",
+      "score_value": 0
     },
     {
       "id": "orbital_clearing",
@@ -2106,7 +2138,8 @@
         ]
       },
       "max_per_planet": null,
-      "description": "Increases planet max orbital space by 1"
+      "description": "Increases planet max orbital space by 1",
+      "score_value": 0
     },
     {
       "id": "jump_gate",
@@ -2163,7 +2196,8 @@
         ]
       },
       "max_per_planet": 1,
-      "description": "Reduces travel time for incoming friendly ships, required on origin and destination"
+      "description": "Reduces travel time for incoming friendly ships, required on origin and destination",
+      "score_value": 2808
     },
     {
       "id": "strip_metal_mine",
@@ -2215,7 +2249,8 @@
         ],
         "effects": []
       },
-      "max_per_planet": 1
+      "max_per_planet": 1,
+      "score_value": 3888
     },
     {
       "id": "strip_mineral_extractor",
@@ -2267,7 +2302,8 @@
         ],
         "effects": []
       },
-      "max_per_planet": 1
+      "max_per_planet": 1,
+      "score_value": 3888
     },
     {
       "id": "hydroponics_dome",
@@ -2319,7 +2355,8 @@
         ],
         "effects": []
       },
-      "max_per_planet": 1
+      "max_per_planet": 1,
+      "score_value": 3240
     },
     {
       "id": "solar_station",
@@ -2365,7 +2402,8 @@
         "consumption": [],
         "effects": []
       },
-      "max_per_planet": 1
+      "max_per_planet": 1,
+      "score_value": 3240
     }
   ],
   "research": [
