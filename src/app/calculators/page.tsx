@@ -402,6 +402,154 @@ function CombatSideCard({
   );
 }
 
+function CombatOutput({ combatScan, shipsById }: { combatScan: CombatScanParseResult; shipsById: Record<string, ShipDef> }) {
+  const { attackers, defenders, tradeRatio, battleReport } = combatScan;
+  const atkWon = tradeRatio < 0.95;
+  const defWon = tradeRatio > 1.05;
+
+  const pct = (lost: number, before: number) =>
+    before > 0 ? `${(lost / before * 100).toFixed(1)}%` : '—';
+  const atkPct = pct(attackers.weightedCostLost, attackers.weightedCostBefore);
+  const defPct = pct(defenders.weightedCostBefore > 0 ? defenders.weightedCostLost : 0, defenders.weightedCostBefore);
+
+  // Margin: how much better did the winner do vs the loser, in %-points of fleet lost
+  const atkLossPct = attackers.weightedCostBefore > 0 ? attackers.weightedCostLost / attackers.weightedCostBefore * 100 : 0;
+  const defLossPct = defenders.weightedCostBefore > 0 ? defenders.weightedCostLost / defenders.weightedCostBefore * 100 : 0;
+  const marginPts = Math.abs(atkLossPct - defLossPct);
+
+  return (
+    <>
+      {/* Battle Report Replica */}
+      {battleReport && battleReport.rows.length > 0 && (
+        <div style={{ marginBottom: 14 }}>
+          <SectionLabel text="Battle Report" />
+          <div style={{ borderRadius: 7, border: '1px solid var(--br)', overflow: 'auto' }}>
+            <table className="c-table">
+              <thead>
+                <tr>
+                  <th style={{ textAlign: 'left' }} rowSpan={2}>Ship</th>
+                  <th colSpan={3} style={{ textAlign: 'center', borderBottom: '1px solid var(--br)', background: 'rgba(34,211,238,0.07)', color: 'var(--cyan)' }}>
+                    Owned — {battleReport.ownedPlayers.join(', ')}
+                  </th>
+                  {battleReport.rows.some((r) => r.alliedBefore > 0 || r.alliedAfter > 0) && (
+                    <th colSpan={3} style={{ textAlign: 'center', borderBottom: '1px solid var(--br)', color: 'var(--t2)' }}>Allied</th>
+                  )}
+                  <th colSpan={3} style={{ textAlign: 'center', borderBottom: '1px solid var(--br)', background: 'rgba(248,113,113,0.06)', color: 'var(--r-mineral)' }}>
+                    Hostile — {battleReport.hostilePlayers.join(', ')}
+                  </th>
+                </tr>
+                <tr>
+                  <th>Before</th><th>After</th><th>Lost</th>
+                  {battleReport.rows.some((r) => r.alliedBefore > 0 || r.alliedAfter > 0) && (
+                    <><th>Before</th><th>After</th><th>Lost</th></>
+                  )}
+                  <th>Before</th><th>After</th><th>Lost</th>
+                </tr>
+              </thead>
+              <tbody>
+                {battleReport.rows.map((r) => {
+                  const oLost = r.ownedBefore - r.ownedAfter;
+                  const aLost = r.alliedBefore - r.alliedAfter;
+                  const hLost = r.hostileBefore - r.hostileAfter;
+                  const hasAllied = battleReport.rows.some((x) => x.alliedBefore > 0 || x.alliedAfter > 0);
+                  return (
+                    <tr key={r.shipId}>
+                      <td style={{ fontWeight: 500 }}>{shipsById[r.shipId]?.name ?? r.shipId}</td>
+                      <td style={{ color: 'var(--t2)' }}>{r.ownedBefore || '—'}</td>
+                      <td style={{ color: 'var(--t2)' }}>{r.ownedAfter || '—'}</td>
+                      <td style={{ color: oLost > 0 ? 'var(--r-mineral)' : 'var(--t3)', fontWeight: oLost > 0 ? 600 : undefined }}>
+                        {oLost > 0 ? `−${oLost}` : '—'}
+                      </td>
+                      {hasAllied && (
+                        <>
+                          <td style={{ color: 'var(--t2)' }}>{r.alliedBefore || '—'}</td>
+                          <td style={{ color: 'var(--t2)' }}>{r.alliedAfter || '—'}</td>
+                          <td style={{ color: aLost > 0 ? 'var(--r-mineral)' : 'var(--t3)', fontWeight: aLost > 0 ? 600 : undefined }}>
+                            {aLost > 0 ? `−${aLost}` : '—'}
+                          </td>
+                        </>
+                      )}
+                      <td style={{ color: 'var(--t2)' }}>{r.hostileBefore || '—'}</td>
+                      <td style={{ color: 'var(--t2)' }}>{r.hostileAfter || '—'}</td>
+                      <td style={{ color: hLost > 0 ? 'var(--r-mineral)' : 'var(--t3)', fontWeight: hLost > 0 ? 600 : undefined }}>
+                        {hLost > 0 ? `−${hLost}` : '—'}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Trade Analysis */}
+      <SectionLabel text="Trade Analysis" />
+      {/* Winner banner */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '10px 14px', marginBottom: 10, background: atkWon || defWon ? 'rgba(34,197,94,0.06)' : 'rgba(245,158,11,0.06)', border: `1px solid ${atkWon || defWon ? 'rgba(34,197,94,0.2)' : 'rgba(245,158,11,0.2)'}`, borderRadius: 8 }}>
+        <div>
+          <div style={{ fontSize: 10, color: 'var(--t3)', marginBottom: 2 }}>Outcome</div>
+          <div style={{ fontSize: 14, fontWeight: 700, color: atkWon || defWon ? 'var(--green)' : 'var(--amber)' }}>
+            {atkWon ? `🟢 Attackers won` : defWon ? `🟢 Defenders won` : '🟡 Even trade'}
+            {(atkWon || defWon) && marginPts > 0 && (
+              <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--t2)', marginLeft: 8 }}>
+                ({marginPts.toFixed(1)} pp margin)
+              </span>
+            )}
+          </div>
+        </div>
+        <div style={{ textAlign: 'right' }}>
+          <div style={{ fontSize: 10, color: 'var(--t3)', marginBottom: 2 }}>Atk / Def cost ratio</div>
+          <div style={{ fontSize: 20, fontWeight: 700, fontFamily: 'var(--mono)', color: 'var(--cyan)' }}>
+            {Number.isFinite(tradeRatio) && tradeRatio < 99 ? tradeRatio.toFixed(2) : '∞'}
+          </div>
+        </div>
+      </div>
+      {/* Side-by-side metric table */}
+      <div style={{ borderRadius: 7, border: '1px solid var(--br)', overflow: 'hidden' }}>
+        <table className="c-table">
+          <thead>
+            <tr>
+              <th style={{ textAlign: 'left' }}>Metric</th>
+              <th style={{ textAlign: 'right', background: 'rgba(34,211,238,0.06)', color: 'var(--cyan)' }}>
+                ⚔️ Attackers — {attackers.players.join(', ')}
+              </th>
+              <th style={{ textAlign: 'right', background: 'rgba(245,158,11,0.06)', color: 'var(--amber)' }}>
+                🛡️ Defenders — {defenders.players.join(', ')}
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {[
+              ['Fleet committed (W)', formatHumanNumber(attackers.weightedCostBefore), formatHumanNumber(defenders.weightedCostBefore)],
+              ['Fleet committed (Metal)', formatHumanNumber(attackers.totalCostBefore.metal), formatHumanNumber(defenders.totalCostBefore.metal)],
+              ['Fleet committed (Mineral)', formatHumanNumber(attackers.totalCostBefore.mineral), formatHumanNumber(defenders.totalCostBefore.mineral)],
+              ['Score committed', formatHumanNumber(attackers.totalScoreBefore), formatHumanNumber(defenders.totalScoreBefore)],
+              null,
+              ['Fleet lost (W)', formatHumanNumber(attackers.weightedCostLost), formatHumanNumber(defenders.weightedCostLost)],
+              ['Fleet lost (Metal)', formatHumanNumber(attackers.totalCostLost.metal), formatHumanNumber(defenders.totalCostLost.metal)],
+              ['Fleet lost (Mineral)', formatHumanNumber(attackers.totalCostLost.mineral), formatHumanNumber(defenders.totalCostLost.mineral)],
+              ['Score lost', formatHumanNumber(attackers.totalScoreLost), formatHumanNumber(defenders.totalScoreLost)],
+              ['% of fleet lost', atkPct, defPct],
+            ].map((row, i) => {
+              if (row === null) return <tr key={`sep-${i}`}><td colSpan={3} style={{ padding: '2px 0', background: 'var(--br)', height: 1 }} /></tr>;
+              const [label, atkVal, defVal] = row as string[];
+              const isLoss = label.includes('lost');
+              return (
+                <tr key={label}>
+                  <td style={{ color: 'var(--t3)' }}>{label}</td>
+                  <td style={{ color: isLoss && atkVal !== '0' && atkVal !== '—' ? 'var(--r-mineral)' : undefined }}>{atkVal}</td>
+                  <td style={{ color: isLoss && defVal !== '0' && defVal !== '—' ? 'var(--r-mineral)' : undefined }}>{defVal}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </>
+  );
+}
+
 function WarshipResultPanel({ label, result, accent, border }: { label: string; result: WarshipBudgetResult; accent: string; border: string }) {
   return (
     <div className={`rounded-lg border ${border} bg-black/20 p-3`}>
@@ -1200,59 +1348,7 @@ export default function CalculatorsPage() {
               )}
               {combatScan.fleets.length > 0 && (
                 <div className="c-anim-in mt-3">
-                  {(() => {
-                    const { attackers, defenders, tradeRatio } = combatScan;
-                    const atkWon = tradeRatio < 0.95;
-                    const defWon = tradeRatio > 1.05;
-                    const ratioDisplay = Number.isFinite(tradeRatio) && tradeRatio < 99 ? tradeRatio.toFixed(2) : '∞';
-                    return (
-                      <>
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '11px 14px', marginBottom: 12, background: 'rgba(34,197,94,0.06)', border: '1px solid rgba(34,197,94,0.18)', borderRadius: 8 }}>
-                          <div>
-                            <div style={{ fontSize: 10, color: 'var(--t3)', marginBottom: 2 }}>Outcome</div>
-                            <div style={{ fontSize: 14, fontWeight: 700, color: atkWon ? 'var(--green)' : defWon ? 'var(--green)' : 'var(--amber)' }}>
-                              {atkWon ? '🟢 Attackers won the trade' : defWon ? '🟢 Defenders won the trade' : '🟡 Roughly even trade'}
-                            </div>
-                          </div>
-                          <div style={{ textAlign: 'right' }}>
-                            <div style={{ fontSize: 10, color: 'var(--t3)', marginBottom: 2 }}>Atk/Def ratio</div>
-                            <div style={{ fontSize: 20, fontWeight: 700, fontFamily: 'var(--mono)', color: 'var(--cyan)' }}>{ratioDisplay}</div>
-                          </div>
-                        </div>
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                          <CombatSideCard summary={attackers} enemyCost={defenders.weightedCostLost} shipIds={combatScan.shipIds} shipsById={defs.shipsById} />
-                          <CombatSideCard summary={defenders} enemyCost={attackers.weightedCostLost} shipIds={combatScan.shipIds} shipsById={defs.shipsById} />
-                        </div>
-                        {combatScan.byPlayer.length > 0 && (
-                          <div style={{ marginTop: 12 }}>
-                            <SectionLabel text="By Player" />
-                            <div style={{ borderRadius: 7, border: '1px solid var(--br)', overflow: 'auto' }}>
-                              <table className="c-table">
-                                <thead><tr>
-                                  <th style={{ textAlign: 'left' }}>Player</th>
-                                  <th style={{ textAlign: 'left' }}>Side</th>
-                                  <th>Units lost</th>
-                                  <th>Score lost</th>
-                                  <th>Wtd cost</th>
-                                </tr></thead>
-                                <tbody>
-                                  {combatScan.byPlayer.map((p) => (
-                                    <tr key={`${p.player}-${p.side}`}>
-                                      <td style={{ fontWeight: 500 }}>{p.player}</td>
-                                      <td style={{ fontSize: 11, color: p.side === 'attacker' ? 'var(--cyan)' : 'var(--amber)' }}>{p.side === 'attacker' ? '⚔️ Atk' : '🛡️ Def'}</td>
-                                      <td>{formatHumanNumber(p.totalUnitsLost)}</td>
-                                      <td>{formatHumanNumber(p.totalScoreLost)}</td>
-                                      <td>{formatHumanNumber(p.weightedCostLost)}</td>
-                                    </tr>
-                                  ))}
-                                </tbody>
-                              </table>
-                            </div>
-                          </div>
-                        )}
-                      </>
-                    );
-                  })()}
+                  <CombatOutput combatScan={combatScan} shipsById={defs.shipsById} />
                 </div>
               )}
             </ToolCard>

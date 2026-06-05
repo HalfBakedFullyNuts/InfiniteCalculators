@@ -2102,17 +2102,30 @@ function detectDoubledShipId(line: string, shipNameToId: Record<string, string>)
   return null;
 }
 
-// Parse the top-level Owned / Hostile before-counts from a battle report summary block.
+// Full before+after counts for all three columns in the battle summary block.
+interface BattleSummaryColumns {
+  owned: Record<string, number>;
+  ownedAfter: Record<string, number>;
+  allied: Record<string, number>;
+  alliedAfter: Record<string, number>;
+  hostile: Record<string, number>;
+  hostileAfter: Record<string, number>;
+}
+
 function parseBattleSummaryColumns(
   lines: string[],
   shipNameToId: Record<string, string>,
-): { owned: Record<string, number>; hostile: Record<string, number> } {
+): BattleSummaryColumns {
   const owned: Record<string, number> = {};
+  const ownedAfter: Record<string, number> = {};
+  const allied: Record<string, number> = {};
+  const alliedAfter: Record<string, number> = {};
   const hostile: Record<string, number> = {};
+  const hostileAfter: Record<string, number> = {};
   const SKIP = new Set(['owned', 'allied', 'hostile', 'before', 'after']);
 
   let i = lines.findIndex((l) => safeLower(l) === 'owned');
-  if (i < 0) return { owned, hostile };
+  if (i < 0) return { owned, ownedAfter, allied, alliedAfter, hostile, hostileAfter };
   i++;
 
   while (i < lines.length) {
@@ -2121,8 +2134,12 @@ function parseBattleSummaryColumns(
     if (shipId) {
       const vals = lines.slice(i + 1, i + 7).map((v) => parseHumanNumber(v));
       if (vals.length >= 6) {
-        owned[shipId] = vals[0];  // owned before
-        hostile[shipId] = vals[4]; // hostile before
+        owned[shipId]      = vals[0];  // owned before
+        ownedAfter[shipId] = vals[1];  // owned after
+        allied[shipId]     = vals[2];  // allied before
+        alliedAfter[shipId]= vals[3];  // allied after
+        hostile[shipId]    = vals[4];  // hostile before
+        hostileAfter[shipId] = vals[5];// hostile after
       }
       i += 7;
     } else if (isDoubledPhrase(line)) {
@@ -2134,7 +2151,7 @@ function parseBattleSummaryColumns(
     }
   }
 
-  return { owned, hostile };
+  return { owned, ownedAfter, allied, alliedAfter, hostile, hostileAfter };
 }
 
 interface BattleFleet {
@@ -2224,23 +2241,30 @@ function assignBattleReportSides(
     alliance: 'Unknown',
     side: playerSide.get(fleet.player) ?? 'attacker',
     unitsLost: fleet.lost,
+    unitsBefore: fleet.before,
   }));
 }
 
 // Try to parse a game battle report (has a "Fleet Details" section with per-fleet
 // Before/After ship counts). Returns null if the input is not this format.
-function tryParseBattleReport(rawInput: string, defs: GameDefs): CombatFleetEntry[] | null {
+function tryParseBattleReport(
+  rawInput: string,
+  defs: GameDefs,
+): { fleets: CombatFleetEntry[]; summaryColumns: BattleSummaryColumns } | null {
   const text = normalizeFleetScanText(rawInput);
   const lines = text.split('\n').map((l) => l.trim()).filter(Boolean);
 
   const detailsIdx = lines.findIndex((l) => safeLower(l) === 'fleet details');
   if (detailsIdx < 0) return null;
 
-  const { owned, hostile } = parseBattleSummaryColumns(lines.slice(0, detailsIdx), defs.shipNameToId);
+  const summaryColumns = parseBattleSummaryColumns(lines.slice(0, detailsIdx), defs.shipNameToId);
   const battleFleets = parseBattleFleetSection(lines.slice(detailsIdx + 1), defs.shipNameToId);
 
   if (battleFleets.length === 0) return null;
-  return assignBattleReportSides(battleFleets, owned, hostile);
+  return {
+    fleets: assignBattleReportSides(battleFleets, summaryColumns.owned, summaryColumns.hostile),
+    summaryColumns,
+  };
 }
 
 export interface CombatFleetEntry {
@@ -2249,6 +2273,7 @@ export interface CombatFleetEntry {
   alliance: string;
   side: 'attacker' | 'defender';
   unitsLost: Record<string, number>;
+  unitsBefore: Record<string, number>;
 }
 
 export interface CombatSideSummary {
@@ -2261,6 +2286,25 @@ export interface CombatSideSummary {
   totalScoreLost: number;
   totalCostLost: Record<ResourceId, number>;
   weightedCostLost: number;
+  totalScoreBefore: number;
+  totalCostBefore: Record<ResourceId, number>;
+  weightedCostBefore: number;
+}
+
+export interface BattleReportShipRow {
+  shipId: string;
+  ownedBefore: number;
+  ownedAfter: number;
+  alliedBefore: number;
+  alliedAfter: number;
+  hostileBefore: number;
+  hostileAfter: number;
+}
+
+export interface BattleReportData {
+  rows: BattleReportShipRow[];
+  ownedPlayers: string[];
+  hostilePlayers: string[];
 }
 
 export interface CombatPlayerSummary {
@@ -2283,6 +2327,7 @@ export interface CombatScanParseResult {
   tradeRatio: number;
   shipIds: string[];
   warnings: string[];
+  battleReport?: BattleReportData;
 }
 
 function parseCombatSideLabel(line: string): 'attacker' | 'defender' | null {
@@ -2338,7 +2383,7 @@ function parseCombatBlocks(lines: string[], defs: GameDefs): CombatFleetEntry[] 
       }
 
       if (Object.keys(unitsLost).length > 0) {
-        fleets.push({ fleetName: line, player, alliance, side: currentSide, unitsLost });
+        fleets.push({ fleetName: line, player, alliance, side: currentSide, unitsLost, unitsBefore: {} });
       }
       continue;
     }
@@ -2357,7 +2402,9 @@ function buildCombatSide(
   const unitsLost: Record<string, number> = {};
   let totalUnitsLost = 0;
   let totalScoreLost = 0;
+  let totalScoreBefore = 0;
   const totalCostLost: Record<ResourceId, number> = { metal: 0, mineral: 0, food: 0, energy: 0 };
+  const totalCostBefore: Record<ResourceId, number> = { metal: 0, mineral: 0, food: 0, energy: 0 };
 
   for (const fleet of sideFleets) {
     for (const [id, count] of Object.entries(fleet.unitsLost)) {
@@ -2372,6 +2419,16 @@ function buildCombatSide(
         totalCostLost.energy += ship.costs.energy * count;
       }
     }
+    for (const [id, count] of Object.entries(fleet.unitsBefore)) {
+      const ship = shipsById[id];
+      if (ship && count > 0) {
+        totalScoreBefore += ship.scoreValue * count;
+        totalCostBefore.metal += ship.costs.metal * count;
+        totalCostBefore.mineral += ship.costs.mineral * count;
+        totalCostBefore.food += ship.costs.food * count;
+        totalCostBefore.energy += ship.costs.energy * count;
+      }
+    }
   }
 
   return {
@@ -2384,6 +2441,9 @@ function buildCombatSide(
     totalScoreLost,
     totalCostLost,
     weightedCostLost: weightedResourceValue(totalCostLost),
+    totalScoreBefore,
+    totalCostBefore,
+    weightedCostBefore: weightedResourceValue(totalCostBefore),
   };
 }
 
@@ -2431,8 +2491,8 @@ export function parseCombatScanInput(rawInput: string, defs: GameDefs): CombatSc
 
   // Try the game's native battle report format (Fleet Details with Before/After)
   // before falling back to the manual Attacker/Defender format.
-  const battleReportFleets = tryParseBattleReport(rawInput, defs);
-  let fleets = battleReportFleets ?? parseCombatBlocks(lines, defs);
+  const battleReportResult = tryParseBattleReport(rawInput, defs);
+  let fleets = battleReportResult ? battleReportResult.fleets : parseCombatBlocks(lines, defs);
 
   if (fleets.length === 0) {
     warnings.push('No combat data found. Paste a Combat Report page (has a "Fleet Details" section), or use the manual format: "Attacker" / "Defender" labels, then "Player (Alliance)" lines with "N x Ship" losses.');
@@ -2452,41 +2512,94 @@ export function parseCombatScanInput(rawInput: string, defs: GameDefs): CombatSc
   }
   const shipIds = Object.keys(defs.shipsById).filter((id) => shipIdSet.has(id));
 
-  return { fleets, attackers, defenders, byPlayer, tradeRatio, shipIds, warnings };
+  // Build the structured battle report replica from the summary columns (battle-report path only).
+  let battleReport: BattleReportData | undefined;
+  if (battleReportResult) {
+    const sc = battleReportResult.summaryColumns;
+    const allIds = new Set([...Object.keys(sc.owned), ...Object.keys(sc.allied), ...Object.keys(sc.hostile)]);
+    const rows: BattleReportShipRow[] = Object.keys(defs.shipsById)
+      .filter((id) => allIds.has(id))
+      .map((id) => ({
+        shipId: id,
+        ownedBefore:  sc.owned[id]      || 0,
+        ownedAfter:   sc.ownedAfter[id]  || 0,
+        alliedBefore: sc.allied[id]      || 0,
+        alliedAfter:  sc.alliedAfter[id] || 0,
+        hostileBefore:  sc.hostile[id]      || 0,
+        hostileAfter:   sc.hostileAfter[id] || 0,
+      }));
+    battleReport = { rows, ownedPlayers: defenders.players, hostilePlayers: attackers.players };
+  }
+
+  return { fleets, attackers, defenders, byPlayer, tradeRatio, shipIds, warnings, battleReport };
 }
 
 export function formatCombatScanAsDiscord(result: CombatScanParseResult, shipsById: Record<string, ShipDef>): string {
   if (result.fleets.length === 0) return '';
 
-  const { attackers, defenders, tradeRatio } = result;
-  const winner = tradeRatio < 0.95 ? 'Attackers' : tradeRatio > 1.05 ? 'Defenders' : 'Draw';
-  const ratio = Number.isFinite(tradeRatio) ? tradeRatio.toFixed(2) : '∞';
+  const { attackers, defenders, tradeRatio, battleReport } = result;
+  const atkPct = attackers.weightedCostBefore > 0
+    ? (attackers.weightedCostLost / attackers.weightedCostBefore * 100).toFixed(1)
+    : '—';
+  const defPct = defenders.weightedCostBefore > 0
+    ? (defenders.weightedCostLost / defenders.weightedCostBefore * 100).toFixed(1)
+    : '—';
 
-  const sideLines = (side: CombatSideSummary): string[] => {
-    const rows: string[] = [
-      `${side.side === 'attacker' ? 'ATTACKERS' : 'DEFENDERS'} (${side.alliances.join(', ')})`,
-      `Players: ${side.players.join(', ')}`,
-      `Fleets: ${side.fleets} | Units lost: ${formatHumanNumber(side.totalUnitsLost)}`,
-      `Score lost: ${formatHumanNumber(side.totalScoreLost)} | Weighted cost: ${formatHumanNumber(side.weightedCostLost)}`,
-      `Metal destroyed: ${formatHumanNumber(side.totalCostLost.metal)} | Mineral destroyed: ${formatHumanNumber(side.totalCostLost.mineral)}`,
-    ];
-    for (const [id, count] of Object.entries(side.unitsLost).sort(([, a], [, b]) => b - a)) {
-      const name = shipsById[id]?.name ?? id;
-      rows.push(`  ${formatHumanNumber(count)} x ${name}`);
-    }
-    return rows;
-  };
+  const winnerSide = tradeRatio < 0.95 ? 'Attackers' : tradeRatio > 1.05 ? 'Defenders' : 'Draw';
+  const ratio = Number.isFinite(tradeRatio) && tradeRatio < 99 ? tradeRatio.toFixed(2) : '∞';
 
-  const lines = [
-    'Combat Scan Analysis',
-    `Winner: ${winner} | Trade ratio (atk/def): ${ratio}`,
-    '',
-    ...sideLines(attackers),
-    '',
-    ...sideLines(defenders),
+  const parts: string[] = [];
+
+  // Battle report table (native format only)
+  if (battleReport && battleReport.rows.length > 0) {
+    const ownedLabel = `Owned (${battleReport.ownedPlayers.join(', ')})`;
+    const hostileLabel = `Hostile (${battleReport.hostilePlayers.join(', ')})`;
+    const tableRows = battleReport.rows.map((r) => {
+      const oLost = r.ownedBefore - r.ownedAfter;
+      const hLost = r.hostileBefore - r.hostileAfter;
+      const aLost = r.alliedBefore - r.alliedAfter;
+      return [
+        shipsById[r.shipId]?.name ?? r.shipId,
+        String(r.ownedBefore), String(r.ownedAfter), oLost > 0 ? `-${oLost}` : '—',
+        String(r.alliedBefore), String(r.alliedAfter), aLost > 0 ? `-${aLost}` : '—',
+        String(r.hostileBefore), String(r.hostileAfter), hLost > 0 ? `-${hLost}` : '—',
+      ];
+    });
+    const headers = ['Ship', 'O.Bef', 'O.Aft', 'O.Lost', 'A.Bef', 'A.Aft', 'A.Lost', 'H.Bef', 'H.Aft', 'H.Lost'];
+    parts.push(`Ships  |  ${ownedLabel}  |  Allied  |  ${hostileLabel}`);
+    parts.push(formatDiscordTable('', headers, tableRows));
+  }
+
+  // Trade analysis table
+  const tradeRows: (string | number)[][] = [
+    ['Players', attackers.players.join(', '), defenders.players.join(', ')],
+    ['Fleet committed (W)', formatHumanNumber(attackers.weightedCostBefore), formatHumanNumber(defenders.weightedCostBefore)],
+    ['Fleet lost (W)', formatHumanNumber(attackers.weightedCostLost), formatHumanNumber(defenders.weightedCostLost)],
+    ['% of fleet lost', `${atkPct}%`, `${defPct}%`],
+    ['Score committed', formatHumanNumber(attackers.totalScoreBefore), formatHumanNumber(defenders.totalScoreBefore)],
+    ['Score lost', formatHumanNumber(attackers.totalScoreLost), formatHumanNumber(defenders.totalScoreLost)],
+    ['Metal lost', formatHumanNumber(attackers.totalCostLost.metal), formatHumanNumber(defenders.totalCostLost.metal)],
+    ['Mineral lost', formatHumanNumber(attackers.totalCostLost.mineral), formatHumanNumber(defenders.totalCostLost.mineral)],
+    ['Winner', winnerSide === 'Attackers' ? '✓' : '', winnerSide === 'Defenders' ? '✓' : ''],
+    ['Trade ratio (atk/def)', ratio, ''],
   ];
+  parts.push(formatDiscordTable('Trade Analysis', ['Metric', 'Attackers', 'Defenders (Owned)'], tradeRows));
 
-  return `\`\`\`\n${lines.join('\n').trim()}\n\`\`\``;
+  return `\`\`\`\n${parts.join('\n\n').trim()}\n\`\`\``;
+}
+
+// Re-export formatDiscordTable for use in formatCombatScanAsDiscord
+function formatDiscordTable(title: string, headers: string[], rows: (string | number)[][]): string {
+  const normalizedRows = rows.length ? rows : [['No rows']];
+  const columnCount = Math.max(headers.length, ...normalizedRows.map((row) => row.length));
+  const normalizedHeaders = Array.from({ length: columnCount }, (_, i) => String(headers[i] || '').replace(/\s+/g, ' ').trim());
+  const normalizedBody = normalizedRows.map((row) =>
+    Array.from({ length: columnCount }, (_, i) => String(row[i] ?? '').replace(/\s+/g, ' ').trim()),
+  );
+  const widths = normalizedHeaders.map((h, i) => Math.max(h.length, ...normalizedBody.map((r) => r[i].length)));
+  const renderRow = (row: string[]) => row.map((cell, i) => cell.padEnd(widths[i])).join(' | ');
+  const divider = widths.map((w) => '-'.repeat(w)).join('-+-');
+  return [title, renderRow(normalizedHeaders), divider, ...normalizedBody.map(renderRow)].filter(Boolean).join('\n');
 }
 
 export function projectAvailableResources(snapshot: ParsedSnapshot, ticks: number): Record<ResourceId, number> {
