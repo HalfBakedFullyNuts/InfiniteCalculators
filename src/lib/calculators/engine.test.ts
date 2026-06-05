@@ -536,4 +536,24 @@ PlayerB (AllianceB)
     expect(parsed.warnings).toHaveLength(1);
     expect(parsed.warnings[0]).toContain('No combat data found');
   });
+
+  test('manual format: resolveKnownName used — glued labels still resolve ship', () => {
+    // parseCombatShipLine previously used a direct dict lookup, so "250 x Fighter Bomber"
+    // (glued from a copy) would yield shipId=undefined and the fleet would be dropped.
+    // Now it uses resolveKnownName, which prefix-matches "fighter" from "fighter bomber".
+    const input = `Attacker
+PlayerA (AllianceA)
+250 x Fighter Bomber
+50 x Bomber Frigate
+
+Defender
+PlayerB (AllianceB)
+180 x Frigate Freighter`;
+
+    const parsed = parseCombatScanInput(input, defs);
+    expect(parsed.warnings).toHaveLength(0);
+    expect(parsed.attackers.unitsLost.fighter).toBe(250);
+    expect(parsed.attackers.unitsLost.bomber).toBe(50);
+    expect(parsed.defenders.unitsLost.frigate).toBe(180);
+  });
 });

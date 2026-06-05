@@ -1389,7 +1389,7 @@ export function parseRatioInput(ratioInput: string, nameToId: Record<string, str
     }
 
     const name = safeLower(match[1]);
-    const id = nameToId[name] || name;
+    const id = resolveKnownName(name, nameToId) ?? (nameToId[name] || name);
     const weight = Number(match[2]);
     if (!Number.isFinite(weight) || weight <= 0) {
       continue;
@@ -2296,7 +2296,7 @@ function parseCombatShipLine(line: string, shipNameToId: Record<string, string>)
   const match = line.match(/^(\d[\d,]*)\s*[x×]\s+(.+?)(?:\s*\((?:destroyed|lost|killed)\))?$/i);
   if (!match) return null;
   const count = Math.floor(parseHumanNumber(match[1]));
-  const shipId = shipNameToId[safeLower(match[2].trim())];
+  const shipId = resolveKnownName(safeLower(match[2].trim()), shipNameToId);
   if (!shipId || count <= 0) return null;
   return [shipId, count];
 }
