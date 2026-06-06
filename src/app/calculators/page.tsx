@@ -550,58 +550,6 @@ function CombatOutput({ combatScan, shipsById }: { combatScan: CombatScanParseRe
         </div>
       )}
 
-      {/* Fleet Details */}
-      {battleReport && combatScan.fleets.length > 0 && (
-        <div style={{ marginBottom: 14 }}>
-          <SectionLabel text="Fleet Details" />
-          <div style={{ borderRadius: 7, border: '1px solid var(--br)', overflow: 'hidden' }}>
-            <table className="c-table">
-              <thead>
-                <tr>
-                  <th style={{ textAlign: 'left' }}>Fleet</th>
-                  <th style={{ textAlign: 'left' }}>Player</th>
-                  <th style={{ textAlign: 'left' }}>Alliance</th>
-                  <th>Side</th>
-                  <th style={{ textAlign: 'right' }}>Score lost</th>
-                </tr>
-              </thead>
-              <tbody>
-                {(() => {
-                  const ownedSet = new Set(battleReport.ownedPlayers);
-                  const sideLabel = (f: typeof combatScan.fleets[0]) => {
-                    if (f.side === 'attacker') return 'Hostile';
-                    return ownedSet.has(f.player) ? 'Owned' : 'Allied';
-                  };
-                  const sideOrder: Record<string, number> = { Owned: 0, Allied: 1, Hostile: 2 };
-                  const scoreLost = (f: typeof combatScan.fleets[0]) =>
-                    Object.entries(f.unitsLost).reduce((s, [id, n]) => s + (shipsById[id]?.scoreValue ?? 0) * n, 0);
-                  return [...combatScan.fleets]
-                    .sort((a, b) => {
-                      const so = (sideOrder[sideLabel(a)] ?? 3) - (sideOrder[sideLabel(b)] ?? 3);
-                      return so !== 0 ? so : scoreLost(b) - scoreLost(a);
-                    })
-                    .map((f, i) => {
-                      const side = sideLabel(f);
-                      const sideColor = side === 'Hostile' ? 'var(--r-mineral)' : side === 'Allied' ? 'var(--t2)' : 'var(--cyan)';
-                      return (
-                        <tr key={i}>
-                          <td style={{ color: 'var(--t2)' }}>{f.fleetName || '—'}</td>
-                          <td style={{ fontWeight: 500 }}>{f.player}</td>
-                          <td style={{ color: 'var(--t3)', fontSize: 11 }}>{f.alliance}</td>
-                          <td style={{ textAlign: 'center', fontSize: 11, fontWeight: 600, color: sideColor }}>{side}</td>
-                          <td style={{ textAlign: 'right', fontFamily: 'var(--mono)', color: scoreLost(f) > 0 ? 'var(--r-mineral)' : 'var(--t3)' }}>
-                            {scoreLost(f) > 0 ? formatHumanNumber(scoreLost(f)) : '—'}
-                          </td>
-                        </tr>
-                      );
-                    });
-                })()}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
       {/* Trade Analysis */}
       <SectionLabel text="Trade Analysis" />
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '10px 14px', marginBottom: 10, background: atkWon || defWon ? 'rgba(34,197,94,0.06)' : 'rgba(245,158,11,0.06)', border: `1px solid ${atkWon || defWon ? 'rgba(34,197,94,0.2)' : 'rgba(245,158,11,0.2)'}`, borderRadius: 8 }}>

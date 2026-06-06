@@ -2722,30 +2722,6 @@ export function formatCombatScanAsDiscord(result: CombatScanParseResult, shipsBy
     parts.push(`Ships  |  ${ownedLabel}${hasAllied ? '  |  Allied' : ''}  |  ${hostileLabel}`);
     parts.push(formatDiscordTable('', headers, tableRows));
 
-    // Fleet Details section — one row per fleet, sorted: owned → allied → hostile, then by score desc
-    if (result.fleets.length > 0) {
-      const ownedSet = new Set(battleReport.ownedPlayers);
-      const hostileSet = new Set(battleReport.hostilePlayers);
-      const sideLabel = (f: CombatFleetEntry) => {
-        if (f.side === 'attacker') return 'Hostile';
-        return ownedSet.has(f.player) ? 'Owned' : 'Allied';
-      };
-      const sideOrder: Record<string, number> = { Owned: 0, Allied: 1, Hostile: 2 };
-      const fleetScoreLost = (f: CombatFleetEntry) =>
-        Object.entries(f.unitsLost).reduce((s, [id, n]) => s + (shipsById[id]?.scoreValue ?? 0) * n, 0);
-      const sortedFleets = [...result.fleets].sort((a, b) => {
-        const so = (sideOrder[sideLabel(a)] ?? 3) - (sideOrder[sideLabel(b)] ?? 3);
-        return so !== 0 ? so : fleetScoreLost(b) - fleetScoreLost(a);
-      });
-      const fleetRows = sortedFleets.map((f) => [
-        f.fleetName || '—',
-        f.player,
-        f.alliance,
-        sideLabel(f),
-        formatHumanNumber(fleetScoreLost(f)),
-      ]);
-      parts.push(formatDiscordTable('Fleet Details', ['Fleet', 'Player', 'Alliance', 'Side', 'Score lost'], fleetRows));
-    }
   }
 
   // Compute per-side summaries from battle report rows when available
