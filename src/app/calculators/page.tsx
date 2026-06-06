@@ -165,18 +165,13 @@ function PasteInput({ value, onChange, placeholder, hint, height = 140, demoData
   value: string; onChange: (v: string) => void;
   placeholder?: string; hint?: string; height?: number; demoData?: string;
 }) {
-  const textareaRef = React.useRef<HTMLTextAreaElement>(null);
   const hasContent = value.trim().length > 0;
   return (
     <div className="relative">
       {!hasContent && (
         <div
-          onClick={() => {
-            if (demoData) onChange(demoData);
-            textareaRef.current?.focus();
-          }}
           className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 rounded-lg"
-          style={{ border: '1.5px dashed rgba(255,255,255,0.09)', background: 'rgba(0,0,0,0.28)', cursor: 'pointer' }}
+          style={{ border: '1.5px dashed rgba(255,255,255,0.09)', background: 'rgba(0,0,0,0.28)', pointerEvents: 'none' }}
         >
           <div style={{ fontSize: 22, opacity: 0.2 }}>⌨</div>
           <div className="text-xs text-center px-6" style={{ color: 'var(--t3)', lineHeight: 1.4 }}>{placeholder || 'Paste game data here'}</div>
@@ -184,11 +179,10 @@ function PasteInput({ value, onChange, placeholder, hint, height = 140, demoData
         </div>
       )}
       <textarea
-        ref={textareaRef}
         className="c-paste"
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        style={{ height, opacity: hasContent ? 1 : 0, pointerEvents: hasContent ? 'auto' : 'none' }}
+        style={{ height, opacity: hasContent ? 1 : 0 }}
         spellCheck={false}
       />
       {hasContent && (
