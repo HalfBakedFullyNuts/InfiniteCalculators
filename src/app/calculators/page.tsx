@@ -35,6 +35,7 @@ import {
   formulaBuildRecommendation,
   formatHumanNumber,
   optimizeWarships,
+  WARSHIP_IDS,
   parseCombatScanInput,
   parseFleetScanInput,
   parseFleetOverviewInput,
@@ -688,6 +689,9 @@ export default function CalculatorsPage() {
   const [projectionTicks, setProjectionTicks] = useState(0);
   const [warshipMetal, setWarshipMetal] = useState('');
   const [warshipMineral, setWarshipMineral] = useState('');
+  const [warshipAllowed, setWarshipAllowed] = useState<Record<string, boolean>>(
+    () => Object.fromEntries(WARSHIP_IDS.map((id) => [id, true])),
+  );
   const [fleetOverviewInput, setFleetOverviewInput] = useState('');
   const [fleetScanInput, setFleetScanInput] = useState('');
   const [combatScanInput, setCombatScanInput] = useState('');
@@ -779,11 +783,11 @@ export default function CalculatorsPage() {
   const warshipOptimizer = useMemo(() => {
     const m = parseHumanNumber(warshipMetal);
     const n = parseHumanNumber(warshipMineral);
-    if (m <= 0 && n <= 0) {
-      return null;
-    }
-    return optimizeWarships(m, n, defs.shipsById);
-  }, [warshipMetal, warshipMineral, defs.shipsById]);
+    if (m <= 0 && n <= 0) return null;
+    const allowedIds = WARSHIP_IDS.filter((id) => warshipAllowed[id]);
+    if (allowedIds.length === 0) return null;
+    return optimizeWarships(m, n, defs.shipsById, allowedIds);
+  }, [warshipMetal, warshipMineral, defs.shipsById, warshipAllowed]);
 
   const cargoDiscordExport = useMemo(() => {
     const parts: string[] = [];
@@ -1314,7 +1318,7 @@ export default function CalculatorsPage() {
 
           {/* 07 Warship */}
           <ToolCard id="warships" badge="07" icon="⚔️" title="Warship Budget Optimizer" exportText={warshipDiscordExport} emptyExport="Enter a budget first">
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 14 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
               {([['Metal', warshipMetal, setWarshipMetal], ['Mineral', warshipMineral, setWarshipMineral]] as const).map(([lbl, val, set]) => (
                 <div key={lbl}>
                   <div style={{ fontSize: 11, color: 'var(--t3)', marginBottom: 5 }}>{lbl} Budget</div>
@@ -1323,8 +1327,33 @@ export default function CalculatorsPage() {
                 </div>
               ))}
             </div>
+            <div style={{ marginBottom: 14 }}>
+              <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--t3)', marginBottom: 6 }}>Available ships</div>
+              <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+                {WARSHIP_IDS.map((id) => {
+                  const on = warshipAllowed[id] !== false;
+                  return (
+                    <button
+                      key={id}
+                      type="button"
+                      onClick={() => setWarshipAllowed((prev) => ({ ...prev, [id]: !on }))}
+                      style={{
+                        padding: '3px 10px', fontSize: 12, borderRadius: 20, cursor: 'pointer', fontWeight: on ? 600 : 400,
+                        color: on ? 'var(--t1)' : 'var(--t3)',
+                        background: on ? 'var(--cyan-dim)' : 'rgba(0,0,0,0.2)',
+                        border: `1px solid ${on ? 'var(--cyan-border)' : 'var(--br)'}`,
+                        transition: 'all 0.12s',
+                        opacity: on ? 1 : 0.5,
+                      }}
+                    >
+                      {defs.shipsById[id]?.name ?? id}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
             {!warshipOptimizer
-              ? <EmptyState icon="⚔️" msg="Enter a metal and mineral budget" sub="Finds max score and min-leftover fleet compositions" />
+              ? <EmptyState icon="⚔️" msg="Enter a metal and mineral budget" sub="Select ships above, then enter a budget" />
               : (
                 <div className="c-anim-in" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                   <WarshipResultPanel label="🏆 Highest Score" result={warshipOptimizer.highestScore} accent="text-amber-300" border="border-amber-400/30" />

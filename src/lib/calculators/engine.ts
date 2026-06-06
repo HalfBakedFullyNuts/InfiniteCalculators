@@ -2081,8 +2081,11 @@ export function optimizeWarships(
   budgetMetal: number,
   budgetMineral: number,
   shipsById: Record<string, ShipDef>,
+  allowedIds?: readonly string[],
 ): WarshipOptimizerResult {
+  const allowed = allowedIds ? new Set(allowedIds) : null;
   const warships: WarshipDef[] = (WARSHIP_IDS as readonly string[])
+    .filter((id) => !allowed || allowed.has(id))
     .map((id) => {
       const s = shipsById[id];
       if (!s || s.costs.metal <= 0 || s.costs.mineral <= 0) {
