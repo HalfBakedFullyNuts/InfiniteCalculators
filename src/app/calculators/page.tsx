@@ -406,7 +406,7 @@ function CombatOutput({ combatScan, shipsById }: { combatScan: CombatScanParseRe
 
   const fmt = formatHumanNumber;
   const fmtPair = (a: number, b: number) => `${fmt(a)} / ${fmt(b)}`;
-  const pct = (lost: number, before: number): string => before > 0 ? `${(lost / before * 100).toFixed(1)}%` : '—';
+  const pct = (lost: number, before: number): string => before > 0 ? `${(lost / before * 100).toFixed(2)}%` : '—';
 
   // Compute per-side cost summaries from battle report rows
   type SideSummary = {
@@ -502,52 +502,38 @@ function CombatOutput({ combatScan, shipsById }: { combatScan: CombatScanParseRe
               <thead>
                 <tr>
                   <th style={{ textAlign: 'left' }} rowSpan={2}>Ship</th>
-                  <th colSpan={3} style={{ textAlign: 'center', borderBottom: '1px solid var(--br)', background: 'rgba(34,211,238,0.07)', color: 'var(--cyan)' }}>
+                  <th colSpan={2} style={{ textAlign: 'center', borderBottom: '1px solid var(--br)', background: 'rgba(34,211,238,0.07)', color: 'var(--cyan)' }}>
                     Owned — {battleReport.ownedPlayers.join(', ')}
                   </th>
                   {hasAllied && (
-                    <th colSpan={3} style={{ textAlign: 'center', borderBottom: '1px solid var(--br)', color: 'var(--t2)' }}>Allied</th>
+                    <th colSpan={2} style={{ textAlign: 'center', borderBottom: '1px solid var(--br)', color: 'var(--t2)' }}>Allied</th>
                   )}
-                  <th colSpan={3} style={{ textAlign: 'center', borderBottom: '1px solid var(--br)', background: 'rgba(248,113,113,0.06)', color: 'var(--r-mineral)' }}>
+                  <th colSpan={2} style={{ textAlign: 'center', borderBottom: '1px solid var(--br)', background: 'rgba(248,113,113,0.06)', color: 'var(--r-mineral)' }}>
                     Hostile — {battleReport.hostilePlayers.join(', ')}
                   </th>
                 </tr>
                 <tr>
-                  <th>Before</th><th>After</th><th>Lost</th>
-                  {hasAllied && <><th>Before</th><th>After</th><th>Lost</th></>}
-                  <th>Before</th><th>After</th><th>Lost</th>
+                  <th>Before</th><th>After</th>
+                  {hasAllied && <><th>Before</th><th>After</th></>}
+                  <th>Before</th><th>After</th>
                 </tr>
               </thead>
               <tbody>
-                {battleReport.rows.map((r) => {
-                  const oLost = r.ownedBefore - r.ownedAfter;
-                  const aLost = r.alliedBefore - r.alliedAfter;
-                  const hLost = r.hostileBefore - r.hostileAfter;
-                  return (
-                    <tr key={r.shipId}>
-                      <td style={{ fontWeight: 500 }}>{shipsById[r.shipId]?.name ?? r.shipId}</td>
-                      <td style={{ color: 'var(--t2)' }}>{r.ownedBefore || '—'}</td>
-                      <td style={{ color: 'var(--t2)' }}>{r.ownedAfter || '—'}</td>
-                      <td style={{ color: oLost > 0 ? 'var(--r-mineral)' : 'var(--t3)', fontWeight: oLost > 0 ? 600 : undefined }}>
-                        {oLost > 0 ? `−${oLost}` : '—'}
-                      </td>
-                      {hasAllied && (
-                        <>
-                          <td style={{ color: 'var(--t2)' }}>{r.alliedBefore || '—'}</td>
-                          <td style={{ color: 'var(--t2)' }}>{r.alliedAfter || '—'}</td>
-                          <td style={{ color: aLost > 0 ? 'var(--r-mineral)' : 'var(--t3)', fontWeight: aLost > 0 ? 600 : undefined }}>
-                            {aLost > 0 ? `−${aLost}` : '—'}
-                          </td>
-                        </>
-                      )}
-                      <td style={{ color: 'var(--t2)' }}>{r.hostileBefore || '—'}</td>
-                      <td style={{ color: 'var(--t2)' }}>{r.hostileAfter || '—'}</td>
-                      <td style={{ color: hLost > 0 ? 'var(--r-mineral)' : 'var(--t3)', fontWeight: hLost > 0 ? 600 : undefined }}>
-                        {hLost > 0 ? `−${hLost}` : '—'}
-                      </td>
-                    </tr>
-                  );
-                })}
+                {battleReport.rows.map((r) => (
+                  <tr key={r.shipId}>
+                    <td style={{ fontWeight: 500 }}>{shipsById[r.shipId]?.name ?? r.shipId}</td>
+                    <td style={{ color: 'var(--t2)' }}>{r.ownedBefore || '—'}</td>
+                    <td style={{ color: r.ownedAfter < r.ownedBefore ? 'var(--r-mineral)' : 'var(--t2)' }}>{r.ownedAfter || '—'}</td>
+                    {hasAllied && (
+                      <>
+                        <td style={{ color: 'var(--t2)' }}>{r.alliedBefore || '—'}</td>
+                        <td style={{ color: r.alliedAfter < r.alliedBefore ? 'var(--r-mineral)' : 'var(--t2)' }}>{r.alliedAfter || '—'}</td>
+                      </>
+                    )}
+                    <td style={{ color: 'var(--t2)' }}>{r.hostileBefore || '—'}</td>
+                    <td style={{ color: r.hostileAfter < r.hostileBefore ? 'var(--r-mineral)' : 'var(--t2)' }}>{r.hostileAfter || '—'}</td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>
@@ -599,13 +585,18 @@ function CombatOutput({ combatScan, shipsById }: { combatScan: CombatScanParseRe
                 <tr key={`${label}-${i}`}>
                   <td style={{ color: 'var(--t3)' }}>{label}</td>
                   {cols.map((v, j) => (
-                    <td key={j} style={{ textAlign: 'right', color: isLoss && v !== '—' && v !== '0' && v !== '0.0%' ? 'var(--r-mineral)' : undefined }}>{v}</td>
+                    <td key={j} style={{ textAlign: 'right', color: isLoss && v !== '—' && v !== '0' && v !== '0.00%' ? 'var(--r-mineral)' : undefined }}>{v}</td>
                   ))}
                 </tr>
               );
             })}
           </tbody>
         </table>
+      </div>
+      <div style={{ marginTop: 8, padding: '7px 10px', borderRadius: 6, background: 'rgba(0,0,0,0.2)', border: '1px solid var(--br)', fontSize: 11, color: 'var(--t3)', lineHeight: 1.5 }}>
+        <strong style={{ color: 'var(--t2)' }}>Score lost ratio</strong> = hostile ship score pts lost ÷ (owned + allied) ship score pts lost.
+        {' '}A ratio &gt; 1 means hostile lost more score than the defending side — the higher the number, the more one-sided the victory.
+        {' '}Based on each ship&apos;s <code>score_value</code> from the game data, not on resource costs.
       </div>
     </>
   );

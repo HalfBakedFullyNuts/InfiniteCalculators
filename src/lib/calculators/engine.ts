@@ -2673,7 +2673,7 @@ export function formatCombatScanAsDiscord(result: CombatScanParseResult, shipsBy
   const winnerSide = tradeRatio < 0.95 ? 'Attackers' : tradeRatio > 1.05 ? 'Defenders' : 'Draw';
   const ratio = Number.isFinite(tradeRatio) && tradeRatio < 99 ? tradeRatio.toFixed(2) : '∞';
   const fmtPair = (a: number, b: number) => `${formatHumanNumber(a)} / ${formatHumanNumber(b)}`;
-  const pctStr = (lost: number, bef: number) => bef > 0 ? `${(lost / bef * 100).toFixed(1)}%` : '—';
+  const pctStr = (lost: number, bef: number) => bef > 0 ? `${(lost / bef * 100).toFixed(2)}%` : '—';
 
   const parts: string[] = [];
 
@@ -2683,20 +2683,17 @@ export function formatCombatScanAsDiscord(result: CombatScanParseResult, shipsBy
     const ownedLabel = `Owned (${battleReport.ownedPlayers.join(', ')})`;
     const hostileLabel = `Hostile (${battleReport.hostilePlayers.join(', ')})`;
     const tableRows = battleReport.rows.map((r) => {
-      const oLost = r.ownedBefore - r.ownedAfter;
-      const aLost = r.alliedBefore - r.alliedAfter;
-      const hLost = r.hostileBefore - r.hostileAfter;
       const row: string[] = [
         shipsById[r.shipId]?.name ?? r.shipId,
-        String(r.ownedBefore || '—'), String(r.ownedAfter || '—'), oLost > 0 ? `-${oLost}` : '—',
+        String(r.ownedBefore || '—'), String(r.ownedAfter || '—'),
       ];
-      if (hasAllied) row.push(String(r.alliedBefore || '—'), String(r.alliedAfter || '—'), aLost > 0 ? `-${aLost}` : '—');
-      row.push(String(r.hostileBefore || '—'), String(r.hostileAfter || '—'), hLost > 0 ? `-${hLost}` : '—');
+      if (hasAllied) row.push(String(r.alliedBefore || '—'), String(r.alliedAfter || '—'));
+      row.push(String(r.hostileBefore || '—'), String(r.hostileAfter || '—'));
       return row;
     });
-    const headers = ['Ship', 'O.Bef', 'O.Aft', 'O.Lost'];
-    if (hasAllied) headers.push('A.Bef', 'A.Aft', 'A.Lost');
-    headers.push('H.Bef', 'H.Aft', 'H.Lost');
+    const headers = ['Ship', 'O.Bef', 'O.Aft'];
+    if (hasAllied) headers.push('A.Bef', 'A.Aft');
+    headers.push('H.Bef', 'H.Aft');
     parts.push(`Ships  |  ${ownedLabel}${hasAllied ? '  |  Allied' : ''}  |  ${hostileLabel}`);
     parts.push(formatDiscordTable('', headers, tableRows));
   }
@@ -2762,6 +2759,7 @@ export function formatCombatScanAsDiscord(result: CombatScanParseResult, shipsBy
   }
 
   parts.push(formatDiscordTable('Trade Analysis', tradeHeaders, tradeRows));
+  parts.push('Score lost ratio = hostile score pts lost / (owned + allied) score pts lost. >1 means hostile lost more score. Based on ship score_value, not resource costs.');
   return `\`\`\`\n${parts.join('\n\n').trim()}\n\`\`\``;
 }
 
