@@ -2356,10 +2356,12 @@ function assignBattleReportSides(
 
 // Try to parse a game battle report (has a "Fleet Details" section with per-fleet
 // Before/After ship counts). Returns null if the input is not this format.
+const COMBAT_HEADER_RE = /^Combat at (.+?) on turn (\d+)\.?$/i;
+
 function tryParseBattleReport(
   rawInput: string,
   defs: GameDefs,
-): { fleets: CombatFleetEntry[]; summaryColumns: BattleSummaryColumns } | null {
+): { fleets: CombatFleetEntry[]; summaryColumns: BattleSummaryColumns; location?: string; turn?: number } | null {
   const text = normalizeFleetScanText(rawInput);
   const lines = text.split('\n').map((l) => l.trim()).filter(Boolean);
 
@@ -2370,9 +2372,19 @@ function tryParseBattleReport(
   const battleFleets = parseBattleFleetSection(lines.slice(detailsIdx + 1), defs.shipNameToId);
 
   if (battleFleets.length === 0) return null;
+
+  let location: string | undefined;
+  let turn: number | undefined;
+  for (const line of lines.slice(0, detailsIdx)) {
+    const m = line.match(COMBAT_HEADER_RE);
+    if (m) { location = m[1].trim(); turn = Number(m[2]); break; }
+  }
+
   return {
     fleets: assignBattleReportSides(battleFleets, summaryColumns.owned, summaryColumns.hostile),
     summaryColumns,
+    location,
+    turn,
   };
 }
 
@@ -2414,6 +2426,8 @@ export interface BattleReportData {
   rows: BattleReportShipRow[];
   ownedPlayers: string[];
   hostilePlayers: string[];
+  location?: string;
+  turn?: number;
 }
 
 export interface CombatPlayerSummary {
@@ -2637,7 +2651,13 @@ export function parseCombatScanInput(rawInput: string, defs: GameDefs): CombatSc
         hostileBefore:  sc.hostile[id]      || 0,
         hostileAfter:   sc.hostileAfter[id] || 0,
       }));
-    battleReport = { rows, ownedPlayers: defenders.players, hostilePlayers: attackers.players };
+    battleReport = {
+      rows,
+      ownedPlayers: defenders.players,
+      hostilePlayers: attackers.players,
+      location: battleReportResult.location,
+      turn: battleReportResult.turn,
+    };
   }
 
   return { fleets, attackers, defenders, byPlayer, tradeRatio, shipIds, warnings, battleReport };
@@ -2677,6 +2697,11 @@ export function formatCombatScanAsDiscord(result: CombatScanParseResult, shipsBy
 
   const parts: string[] = [];
 
+  // Combat header
+  if (battleReport?.location && battleReport.turn !== undefined) {
+    parts.push(`Combat at ${battleReport.location} on turn ${battleReport.turn}`);
+  }
+
   // Battle report table — only show Allied columns when allied ships are present
   if (battleReport && battleReport.rows.length > 0) {
     const hasAllied = battleReport.rows.some((r) => r.alliedBefore > 0 || r.alliedAfter > 0);
@@ -2696,6 +2721,31 @@ export function formatCombatScanAsDiscord(result: CombatScanParseResult, shipsBy
     headers.push('H.Bef', 'H.Aft');
     parts.push(`Ships  |  ${ownedLabel}${hasAllied ? '  |  Allied' : ''}  |  ${hostileLabel}`);
     parts.push(formatDiscordTable('', headers, tableRows));
+
+    // Fleet Details section — one row per fleet, sorted: owned → allied → hostile, then by score desc
+    if (result.fleets.length > 0) {
+      const ownedSet = new Set(battleReport.ownedPlayers);
+      const hostileSet = new Set(battleReport.hostilePlayers);
+      const sideLabel = (f: CombatFleetEntry) => {
+        if (f.side === 'attacker') return 'Hostile';
+        return ownedSet.has(f.player) ? 'Owned' : 'Allied';
+      };
+      const sideOrder: Record<string, number> = { Owned: 0, Allied: 1, Hostile: 2 };
+      const fleetScoreLost = (f: CombatFleetEntry) =>
+        Object.entries(f.unitsLost).reduce((s, [id, n]) => s + (shipsById[id]?.scoreValue ?? 0) * n, 0);
+      const sortedFleets = [...result.fleets].sort((a, b) => {
+        const so = (sideOrder[sideLabel(a)] ?? 3) - (sideOrder[sideLabel(b)] ?? 3);
+        return so !== 0 ? so : fleetScoreLost(b) - fleetScoreLost(a);
+      });
+      const fleetRows = sortedFleets.map((f) => [
+        f.fleetName || '—',
+        f.player,
+        f.alliance,
+        sideLabel(f),
+        formatHumanNumber(fleetScoreLost(f)),
+      ]);
+      parts.push(formatDiscordTable('Fleet Details', ['Fleet', 'Player', 'Alliance', 'Side', 'Score lost'], fleetRows));
+    }
   }
 
   // Compute per-side summaries from battle report rows when available
