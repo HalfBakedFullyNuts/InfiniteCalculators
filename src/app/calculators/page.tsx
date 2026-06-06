@@ -444,12 +444,14 @@ function CombatOutput({ combatScan, shipsById }: { combatScan: CombatScanParseRe
   let colHeaders: string[];
   let tradeRows: TradeRow[];
 
+  const resScore = (met: number, min: number) => fmt(Math.round((met + min * 1.5) / 1000));
+
   if (ownedS && hostileS) {
     const cmt = (s: SideSummary): [string, string, string] => [
-      fmtPair(s.metBef, s.minBef), fmtPair(s.metBef, s.minBef * 1.5), fmt(s.scoreBef),
+      fmtPair(s.metBef, s.minBef), resScore(s.metBef, s.minBef), fmt(s.scoreBef),
     ];
     const lst = (s: SideSummary): [string, string, string, string] => [
-      fmtPair(s.metLost, s.minLost), fmtPair(s.metLost, s.minLost * 1.5), fmt(s.scoreLost), pct(s.wLost, s.wBef),
+      fmtPair(s.metLost, s.minLost), resScore(s.metLost, s.minLost), fmt(s.scoreLost), pct(s.scoreLost, s.scoreBef),
     ];
     const oC = cmt(ownedS); const oL = lst(ownedS);
     const hC = cmt(hostileS); const hL = lst(hostileS);
@@ -465,27 +467,27 @@ function CombatOutput({ combatScan, shipsById }: { combatScan: CombatScanParseRe
     colHeaders = [`Owned — ${battleReport!.ownedPlayers.join(', ')}`, ...(aC ? ['Allied'] : []), `Hostile — ${battleReport!.hostilePlayers.join(', ')}`];
     tradeRows = [
       mk('Resources committed', oC[0], aC?.[0] ?? null, hC[0]),
-      mk('Resource score (M / N)', oC[1], aC?.[1] ?? null, hC[1]),
+      mk('Resource score', oC[1], aC?.[1] ?? null, hC[1]),
       mk('Ship score pts', oC[2], aC?.[2] ?? null, hC[2]),
       null,
       mk('Resources lost', oL[0], aL?.[0] ?? null, hL[0], true),
       mk('Resource score lost', oL[1], aL?.[1] ?? null, hL[1], true),
       mk('Ship score pts lost', oL[2], aL?.[2] ?? null, hL[2], true),
-      mk('% of fleet lost', oL[3], aL?.[3] ?? null, hL[3], true),
+      mk('% score lost', oL[3], aL?.[3] ?? null, hL[3], true),
     ];
   } else {
-    const atkPct = pct(attackers.weightedCostLost, attackers.weightedCostBefore);
-    const defPct = pct(defenders.weightedCostLost, defenders.weightedCostBefore);
+    const atkPct = pct(attackers.totalScoreLost, attackers.totalScoreBefore);
+    const defPct = pct(defenders.totalScoreLost, defenders.totalScoreBefore);
     colHeaders = [`⚔️ Attk — ${attackers.players.join(', ')}`, `🛡️ Def — ${defenders.players.join(', ')}`];
     tradeRows = [
       { label: 'Resources committed', cols: [fmtPair(attackers.totalCostBefore.metal, attackers.totalCostBefore.mineral), fmtPair(defenders.totalCostBefore.metal, defenders.totalCostBefore.mineral)] },
-      { label: 'Resource score (M / N)', cols: [fmtPair(attackers.totalCostBefore.metal, attackers.totalCostBefore.mineral * 1.5), fmtPair(defenders.totalCostBefore.metal, defenders.totalCostBefore.mineral * 1.5)] },
+      { label: 'Resource score', cols: [resScore(attackers.totalCostBefore.metal, attackers.totalCostBefore.mineral), resScore(defenders.totalCostBefore.metal, defenders.totalCostBefore.mineral)] },
       { label: 'Ship score pts', cols: [fmt(attackers.totalScoreBefore), fmt(defenders.totalScoreBefore)] },
       null,
       { label: 'Resources lost', cols: [fmtPair(attackers.totalCostLost.metal, attackers.totalCostLost.mineral), fmtPair(defenders.totalCostLost.metal, defenders.totalCostLost.mineral)], isLoss: true },
-      { label: 'Resource score lost', cols: [fmtPair(attackers.totalCostLost.metal, attackers.totalCostLost.mineral * 1.5), fmtPair(defenders.totalCostLost.metal, defenders.totalCostLost.mineral * 1.5)], isLoss: true },
+      { label: 'Resource score lost', cols: [resScore(attackers.totalCostLost.metal, attackers.totalCostLost.mineral), resScore(defenders.totalCostLost.metal, defenders.totalCostLost.mineral)], isLoss: true },
       { label: 'Ship score pts lost', cols: [fmt(attackers.totalScoreLost), fmt(defenders.totalScoreLost)], isLoss: true },
-      { label: '% of fleet lost', cols: [atkPct, defPct], isLoss: true },
+      { label: '% score lost', cols: [atkPct, defPct], isLoss: true },
     ];
   }
 
@@ -571,7 +573,7 @@ function CombatOutput({ combatScan, shipsById }: { combatScan: CombatScanParseRe
           </div>
         </div>
         <div style={{ textAlign: 'right' }}>
-          <div style={{ fontSize: 10, color: 'var(--t3)', marginBottom: 2 }}>Atk / Def cost ratio</div>
+          <div style={{ fontSize: 10, color: 'var(--t3)', marginBottom: 2 }}>Score lost ratio</div>
           <div style={{ fontSize: 20, fontWeight: 700, fontFamily: 'var(--mono)', color: 'var(--cyan)' }}>
             {Number.isFinite(tradeRatio) && tradeRatio < 99 ? tradeRatio.toFixed(2) : '∞'}
           </div>

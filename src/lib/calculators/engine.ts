@@ -2611,9 +2611,9 @@ export function parseCombatScanInput(rawInput: string, defs: GameDefs): CombatSc
   const defenders = buildCombatSide('defender', fleets, defs.shipsById);
   const byPlayer = buildCombatPlayers(fleets, defs.shipsById);
 
-  const tradeRatio = defenders.weightedCostLost > 0
-    ? attackers.weightedCostLost / defenders.weightedCostLost
-    : attackers.weightedCostLost > 0 ? 99 : 1;
+  const tradeRatio = defenders.totalScoreLost > 0
+    ? attackers.totalScoreLost / defenders.totalScoreLost
+    : attackers.totalScoreLost > 0 ? 99 : 1;
 
   const shipIdSet = new Set<string>();
   for (const fleet of fleets) {
@@ -2710,10 +2710,12 @@ export function formatCombatScanAsDiscord(result: CombatScanParseResult, shipsBy
   let tradeHeaders: string[];
   let tradeRows: string[][];
 
+  const resScore = (met: number, min: number) => formatHumanNumber(Math.round((met + min * 1.5) / 1000));
+
   if (ownedS && hostileS) {
     type SC = { metBef: number; minBef: number; scoreBef: number; metLost: number; minLost: number; scoreLost: number; wBef: number; wLost: number };
-    const committed = (s: SC) => [fmtPair(s.metBef, s.minBef), fmtPair(s.metBef, s.minBef * 1.5), formatHumanNumber(s.scoreBef)];
-    const lost = (s: SC) => [fmtPair(s.metLost, s.minLost), fmtPair(s.metLost, s.minLost * 1.5), formatHumanNumber(s.scoreLost), pctStr(s.wLost, s.wBef)];
+    const committed = (s: SC) => [fmtPair(s.metBef, s.minBef), resScore(s.metBef, s.minBef), formatHumanNumber(s.scoreBef)];
+    const lost = (s: SC) => [fmtPair(s.metLost, s.minLost), resScore(s.metLost, s.minLost), formatHumanNumber(s.scoreLost), pctStr(s.scoreLost, s.scoreBef)];
 
     const oC = committed(ownedS); const oL = lost(ownedS);
     const hC = committed(hostileS); const hL = lost(hostileS);
@@ -2731,31 +2733,31 @@ export function formatCombatScanAsDiscord(result: CombatScanParseResult, shipsBy
     const hWin = winnerSide === 'Attackers' ? 'Won ✓' : winnerSide === 'Draw' ? '—' : '';
     tradeRows = [
       mk('Resources committed', oC[0], aC?.[0] ?? null, hC[0]),
-      mk('Resource score (M/N)', oC[1], aC?.[1] ?? null, hC[1]),
+      mk('Resource score', oC[1], aC?.[1] ?? null, hC[1]),
       mk('Ship score pts', oC[2], aC?.[2] ?? null, hC[2]),
       mk('Resources lost', oL[0], aL?.[0] ?? null, hL[0]),
       mk('Resource score lost', oL[1], aL?.[1] ?? null, hL[1]),
       mk('Ship score pts lost', oL[2], aL?.[2] ?? null, hL[2]),
-      mk('% of fleet lost', oL[3], aL?.[3] ?? null, hL[3]),
+      mk('% score lost', oL[3], aL?.[3] ?? null, hL[3]),
       mk('Winner', oWin, aC ? '' : null, hWin),
-      mk('Trade ratio (atk/def)', ratio, aC ? '' : null, ''),
+      mk('Score lost ratio', ratio, aC ? '' : null, ''),
     ];
   } else {
-    const atkPct = attackers.weightedCostBefore > 0
-      ? `${(attackers.weightedCostLost / attackers.weightedCostBefore * 100).toFixed(1)}%` : '—';
-    const defPct = defenders.weightedCostBefore > 0
-      ? `${(defenders.weightedCostLost / defenders.weightedCostBefore * 100).toFixed(1)}%` : '—';
+    const atkPct = attackers.totalScoreBefore > 0
+      ? `${(attackers.totalScoreLost / attackers.totalScoreBefore * 100).toFixed(1)}%` : '—';
+    const defPct = defenders.totalScoreBefore > 0
+      ? `${(defenders.totalScoreLost / defenders.totalScoreBefore * 100).toFixed(1)}%` : '—';
     tradeHeaders = ['Metric', `Attackers (${attackers.players.join(', ')})`, `Defenders (${defenders.players.join(', ')})`];
     tradeRows = [
       ['Resources committed', fmtPair(attackers.totalCostBefore.metal, attackers.totalCostBefore.mineral), fmtPair(defenders.totalCostBefore.metal, defenders.totalCostBefore.mineral)],
-      ['Resource score (M/N)', fmtPair(attackers.totalCostBefore.metal, attackers.totalCostBefore.mineral * 1.5), fmtPair(defenders.totalCostBefore.metal, defenders.totalCostBefore.mineral * 1.5)],
+      ['Resource score', resScore(attackers.totalCostBefore.metal, attackers.totalCostBefore.mineral), resScore(defenders.totalCostBefore.metal, defenders.totalCostBefore.mineral)],
       ['Ship score pts', formatHumanNumber(attackers.totalScoreBefore), formatHumanNumber(defenders.totalScoreBefore)],
       ['Resources lost', fmtPair(attackers.totalCostLost.metal, attackers.totalCostLost.mineral), fmtPair(defenders.totalCostLost.metal, defenders.totalCostLost.mineral)],
-      ['Resource score lost', fmtPair(attackers.totalCostLost.metal, attackers.totalCostLost.mineral * 1.5), fmtPair(defenders.totalCostLost.metal, defenders.totalCostLost.mineral * 1.5)],
+      ['Resource score lost', resScore(attackers.totalCostLost.metal, attackers.totalCostLost.mineral), resScore(defenders.totalCostLost.metal, defenders.totalCostLost.mineral)],
       ['Ship score pts lost', formatHumanNumber(attackers.totalScoreLost), formatHumanNumber(defenders.totalScoreLost)],
-      ['% of fleet lost', atkPct, defPct],
+      ['% score lost', atkPct, defPct],
       ['Winner', winnerSide === 'Attackers' ? '✓' : '', winnerSide === 'Defenders' ? '✓' : ''],
-      ['Trade ratio (atk/def)', ratio, ''],
+      ['Score lost ratio', ratio, ''],
     ];
   }
 
