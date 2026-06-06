@@ -660,6 +660,59 @@ function CombatOutput({ combatScan, shipsById }: { combatScan: CombatScanParseRe
         {' '}A ratio &gt; 1 means hostile lost more score than the defending side — the higher the number, the more one-sided the victory.
         {' '}Based on each ship&apos;s <code>score_value</code> from the game data, not on resource costs.
       </div>
+
+      {/* Alliance score summary */}
+      {combatScan.fleets.length > 0 && battleReport && (
+        <div style={{ marginTop: 12 }}>
+          <SectionLabel text="Alliance Summary" />
+          <div style={{ borderRadius: 7, border: '1px solid var(--br)', overflow: 'hidden' }}>
+            <table className="c-table">
+              <thead>
+                <tr>
+                  <th style={{ textAlign: 'left' }}>Alliance</th>
+                  <th>Side</th>
+                  <th style={{ textAlign: 'right' }}>Score</th>
+                  <th style={{ textAlign: 'right' }}>Score lost</th>
+                  <th style={{ textAlign: 'right' }}>% lost</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(() => {
+                  const ownedSet = new Set(battleReport.ownedPlayers);
+                  const hostileSet = new Set(battleReport.hostilePlayers);
+                  const allianceMap = new Map<string, { side: string; scoreBefore: number; scoreLost: number }>();
+                  for (const fleet of combatScan.fleets) {
+                    const side = fleet.side === 'attacker' ? 'Hostile'
+                      : ownedSet.has(fleet.player) ? 'Owned' : 'Allied';
+                    const bef = Object.entries(fleet.unitsBefore).reduce((s, [id, n]) => s + (shipsById[id]?.scoreValue ?? 0) * n, 0);
+                    const lost = Object.entries(fleet.unitsLost).reduce((s, [id, n]) => s + (shipsById[id]?.scoreValue ?? 0) * n, 0);
+                    const cur = allianceMap.get(fleet.alliance) ?? { side, scoreBefore: 0, scoreLost: 0 };
+                    cur.scoreBefore += bef;
+                    cur.scoreLost += lost;
+                    allianceMap.set(fleet.alliance, cur);
+                  }
+                  const sideOrder: Record<string, number> = { Owned: 0, Allied: 1, Hostile: 2 };
+                  return Array.from(allianceMap.entries())
+                    .sort(([, a], [, b]) => (sideOrder[a.side] ?? 3) - (sideOrder[b.side] ?? 3))
+                    .map(([alliance, { side, scoreBefore, scoreLost }]) => {
+                      const sideColor = side === 'Hostile' ? 'var(--r-mineral)' : side === 'Allied' ? 'var(--t2)' : 'var(--cyan)';
+                      const pctLost = scoreBefore > 0 ? `${(scoreLost / scoreBefore * 100).toFixed(2)}%` : '—';
+                      return (
+                        <tr key={alliance}>
+                          <td style={{ fontWeight: 600 }}>{alliance}</td>
+                          <td style={{ textAlign: 'center', fontSize: 11, fontWeight: 600, color: sideColor }}>{side}</td>
+                          <td style={{ textAlign: 'right', fontFamily: 'var(--mono)' }}>{formatHumanNumber(scoreBefore)}</td>
+                          <td style={{ textAlign: 'right', fontFamily: 'var(--mono)', color: 'var(--r-mineral)' }}>{scoreLost > 0 ? formatHumanNumber(scoreLost) : '—'}</td>
+                          <td style={{ textAlign: 'right', color: 'var(--t3)' }}>{pctLost}</td>
+                        </tr>
+                      );
+                    });
+                })()}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
     </>
   );
 }

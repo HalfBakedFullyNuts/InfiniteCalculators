@@ -2810,6 +2810,31 @@ export function formatCombatScanAsDiscord(result: CombatScanParseResult, shipsBy
 
   parts.push(formatDiscordTable('Trade Analysis', tradeHeaders, tradeRows));
   parts.push('Score lost ratio = hostile score pts lost / (owned + allied) score pts lost. >1 means hostile lost more score. Based on ship score_value, not resource costs.');
+
+  // Alliance score summary
+  if (result.fleets.length > 0 && battleReport) {
+    const ownedSet = new Set(battleReport.ownedPlayers);
+    const allianceMap = new Map<string, { side: string; scoreBefore: number; scoreLost: number }>();
+    for (const fleet of result.fleets) {
+      const side = fleet.side === 'attacker' ? 'Hostile'
+        : ownedSet.has(fleet.player) ? 'Owned' : 'Allied';
+      const bef = Object.entries(fleet.unitsBefore).reduce((s, [id, n]) => s + (shipsById[id]?.scoreValue ?? 0) * n, 0);
+      const lost = Object.entries(fleet.unitsLost).reduce((s, [id, n]) => s + (shipsById[id]?.scoreValue ?? 0) * n, 0);
+      const cur = allianceMap.get(fleet.alliance) ?? { side, scoreBefore: 0, scoreLost: 0 };
+      cur.scoreBefore += bef;
+      cur.scoreLost += lost;
+      allianceMap.set(fleet.alliance, cur);
+    }
+    const sideOrder: Record<string, number> = { Owned: 0, Allied: 1, Hostile: 2 };
+    const summaryRows = Array.from(allianceMap.entries())
+      .sort(([, a], [, b]) => (sideOrder[a.side] ?? 3) - (sideOrder[b.side] ?? 3))
+      .map(([alliance, { side, scoreBefore, scoreLost }]) => {
+        const pct = scoreBefore > 0 ? `${(scoreLost / scoreBefore * 100).toFixed(2)}%` : '—';
+        return [alliance, side, formatHumanNumber(scoreBefore), formatHumanNumber(scoreLost), pct];
+      });
+    parts.push(formatDiscordTable('Alliance Summary', ['Alliance', 'Side', 'Score', 'Score lost', '% lost'], summaryRows));
+  }
+
   return `\`\`\`\n${parts.join('\n\n').trim()}\n\`\`\``;
 }
 
