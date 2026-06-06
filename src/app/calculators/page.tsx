@@ -161,41 +161,32 @@ function wrapDiscordExport(parts: string[]): string {
 
 // ── New Utility Components ──────────────────────────────────────────────────
 
-function PasteInput({ value, onChange, placeholder, hint, height = 140, demoData }: {
+function PasteInput({ value, onChange, placeholder, hint, height = 140, demoData: _demoData }: {
   value: string; onChange: (v: string) => void;
   placeholder?: string; hint?: string; height?: number; demoData?: string;
 }) {
   const hasContent = value.trim().length > 0;
   return (
-    <div className="relative">
-      {!hasContent && (
-        <div
-          className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 rounded-lg"
-          style={{ border: '1.5px dashed rgba(255,255,255,0.09)', background: 'rgba(0,0,0,0.28)', pointerEvents: 'none' }}
-        >
-          <div style={{ fontSize: 22, opacity: 0.2 }}>⌨</div>
-          <div className="text-xs text-center px-6" style={{ color: 'var(--t3)', lineHeight: 1.4 }}>{placeholder || 'Paste game data here'}</div>
-          {hint && <div className="text-xs" style={{ color: 'var(--t3)', opacity: 0.55 }}>{hint}</div>}
-        </div>
-      )}
+    <div>
       <textarea
         className="c-paste"
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        style={{ height, opacity: hasContent ? 1 : 0 }}
+        placeholder={placeholder || 'Paste game data here…'}
+        style={{ height }}
         spellCheck={false}
       />
-      {hasContent && (
-        <div className="flex justify-between items-center mt-1">
-          <span className="text-[11px]" style={{ color: 'var(--t3)' }}>{hint || ''}</span>
+      <div className="flex justify-between items-center mt-1">
+        <span className="text-[11px]" style={{ color: 'var(--t3)' }}>{hint || ''}</span>
+        {hasContent && (
           <div className="flex gap-2 items-center">
             <span className="text-[11px]" style={{ color: 'var(--t3)', fontFamily: 'var(--mono)' }}>
               {value.length.toLocaleString()} chars
             </span>
             <button type="button" className="c-btn-ghost" style={{ fontSize: 11, padding: '2px 8px' }} onClick={() => onChange('')}>× Clear</button>
           </div>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 }
