@@ -1600,8 +1600,9 @@ export default function CalculatorsPage() {
                       <div key={sys.destCoords || sys.systemId} style={{ borderRadius: 7, border: '1px solid var(--br)', overflow: 'hidden' }}>
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '8px 12px', background: 'var(--bg-inner)', borderBottom: '1px solid var(--br)' }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                            <span style={{ fontSize: 13, fontWeight: 600 }}>{sys.destName || sys.systemId}</span>
-                            <span style={{ fontSize: 11, fontFamily: 'var(--mono)', color: 'var(--cyan)' }}>{sys.destCoords}</span>
+                            <span style={{ fontSize: 13, fontWeight: 700, fontFamily: 'var(--mono)', color: 'var(--cyan)' }}>{sys.systemId}</span>
+                            {sys.destName && <span style={{ fontSize: 12, fontWeight: 500 }}>{sys.destName}</span>}
+                            {sys.destCoords && <span style={{ fontSize: 11, fontFamily: 'var(--mono)', color: 'var(--t3)' }}>{sys.destCoords}</span>}
                             <span style={{ fontSize: 11, color: 'var(--t3)' }}>{sys.fleets.length} fleet{sys.fleets.length !== 1 ? 's' : ''}</span>
                           </div>
                           <DiscordBtn exportText={discord} emptyText="No data" />

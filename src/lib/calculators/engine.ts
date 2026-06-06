@@ -2981,8 +2981,8 @@ export function parseRadarInput(rawInput: string): RadarParseResult {
 }
 
 export function formatRadarSystemAsDiscord(system: RadarSystemSummary): string {
-  const title = [system.destName, system.destCoords].filter(Boolean).join(' ');
-  const header = `${title || system.systemId} — ${system.fleets.length} fleet${system.fleets.length !== 1 ? 's' : ''} inbound`;
+  const subtitle = [system.destName, system.destCoords].filter(Boolean).join(' ');
+  const header = `Comms ${system.systemId}${subtitle ? ` (${subtitle})` : ''} — ${system.fleets.length} fleet${system.fleets.length !== 1 ? 's' : ''} inbound`;
 
   const sorted = [...system.fleets].sort((a, b) => a.eta - b.eta || b.score - a.score);
   const rows = sorted.map((f) => [
