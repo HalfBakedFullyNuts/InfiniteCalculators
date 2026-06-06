@@ -1529,23 +1529,42 @@ export default function CalculatorsPage() {
                 </div>
               )}
               {radarResult.systems.length > 0 && (
-                <div className="c-anim-in mt-3 flex flex-col gap-2">
+                <div className="c-anim-in mt-3 flex flex-col gap-3">
                   {radarResult.systems.map((sys) => {
                     const discord = formatRadarSystemAsDiscord(sys);
+                    const sorted = [...sys.fleets].sort((a, b) => a.eta - b.eta || b.score - a.score);
                     return (
-                      <div key={sys.destCoords || sys.systemId} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '8px 12px', background: 'var(--bg-inner)', border: '1px solid var(--br)', borderRadius: 7 }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', flex: 1 }}>
-                          <span style={{ fontSize: 13, fontWeight: 600 }}>{sys.destName || sys.systemId}</span>
-                          <span style={{ fontSize: 11, fontFamily: 'var(--mono)', color: 'var(--t3)' }}>{sys.destCoords}</span>
-                          <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-                            {sys.byAlliance.map((a) => (
-                              <span key={a.alliance} className="c-chip" style={{ fontSize: 11, padding: '1px 8px' }}>
-                                <span style={{ color: 'var(--t3)' }}>{a.alliance}:</span> <span style={{ fontWeight: 600 }}>{a.count}</span>
-                              </span>
-                            ))}
+                      <div key={sys.destCoords || sys.systemId} style={{ borderRadius: 7, border: '1px solid var(--br)', overflow: 'hidden' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '8px 12px', background: 'var(--bg-inner)', borderBottom: '1px solid var(--br)' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                            <span style={{ fontSize: 13, fontWeight: 600 }}>{sys.destName || sys.systemId}</span>
+                            <span style={{ fontSize: 11, fontFamily: 'var(--mono)', color: 'var(--cyan)' }}>{sys.destCoords}</span>
+                            <span style={{ fontSize: 11, color: 'var(--t3)' }}>{sys.fleets.length} fleet{sys.fleets.length !== 1 ? 's' : ''}</span>
                           </div>
+                          <DiscordBtn exportText={discord} emptyText="No data" />
                         </div>
-                        <DiscordBtn exportText={discord} emptyText="No data" />
+                        <table className="c-table">
+                          <thead>
+                            <tr>
+                              <th style={{ textAlign: 'right' }}>ETA</th>
+                              <th style={{ textAlign: 'left' }}>Fleet</th>
+                              <th style={{ textAlign: 'left' }}>Player</th>
+                              <th style={{ textAlign: 'left' }}>Alliance</th>
+                              <th style={{ textAlign: 'right' }}>Score</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {sorted.map((f, i) => (
+                              <tr key={i}>
+                                <td style={{ fontFamily: 'var(--mono)', color: 'var(--cyan)', fontWeight: 600, textAlign: 'right' }}>{f.eta}t</td>
+                                <td style={{ color: 'var(--t2)' }}>{f.fleetName || '—'}</td>
+                                <td style={{ fontWeight: 500 }}>{f.player}</td>
+                                <td style={{ color: 'var(--t3)', fontSize: 11 }}>{f.alliance}</td>
+                                <td style={{ textAlign: 'right', fontFamily: 'var(--mono)' }}>{formatHumanNumber(f.score)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
                       </div>
                     );
                   })}

@@ -2933,11 +2933,17 @@ export function formatRadarSystemAsDiscord(system: RadarSystemSummary): string {
   const title = [system.destName, system.destCoords].filter(Boolean).join(' ');
   const header = `${title || system.systemId} — ${system.fleets.length} fleet${system.fleets.length !== 1 ? 's' : ''} inbound`;
 
-  const rows = system.byAlliance.map((a) => [a.alliance, String(a.count), a.players.join(', ')]);
-  const cols = ['Alliance', 'Flt', 'Players'];
+  const sorted = [...system.fleets].sort((a, b) => a.eta - b.eta || b.score - a.score);
+  const rows = sorted.map((f) => [
+    f.fleetName || '—',
+    `${f.player} (${f.alliance})`,
+    formatHumanNumber(f.score),
+    `${f.eta}t`,
+  ]);
+  const cols = ['Fleet', 'Player (Alliance)', 'Score', 'ETA'];
   const widths = cols.map((c, ci) => Math.max(c.length, ...rows.map((r) => r[ci].length)));
-  const sep = widths.map((w) => '-'.repeat(w)).join('  ');
-  const renderRow = (row: string[]) => row.map((cell, i) => (i === 1 ? cell.padStart(widths[i]) : cell.padEnd(widths[i]))).join('  ');
+  const sep = widths.map((w) => '-'.repeat(w)).join(' | ');
+  const renderRow = (row: string[]) => row.map((cell, i) => (i === 3 ? cell.padStart(widths[i]) : cell.padEnd(widths[i]))).join(' | ');
 
   const lines = [header, renderRow(cols), sep, ...rows.map(renderRow)];
   return `\`\`\`\n${lines.join('\n')}\n\`\`\``;
