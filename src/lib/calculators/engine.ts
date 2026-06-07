@@ -2735,81 +2735,59 @@ export function formatCombatScanAsDiscord(result: CombatScanParseResult, shipsBy
 
   const resScore = (met: number, min: number) => formatHumanNumber(Math.round((met + min * 1.5) / 1000));
 
-  if (ownedS && hostileS) {
-    type SC = { metBef: number; minBef: number; scoreBef: number; metLost: number; minLost: number; scoreLost: number; wBef: number; wLost: number };
+  // Combine owned+allied into one defending side
+  type SC = { metBef: number; minBef: number; scoreBef: number; metLost: number; minLost: number; scoreLost: number; wBef: number; wLost: number };
+  const defS: SC | null = ownedS ? {
+    metBef: ownedS.metBef + (alliedS?.metBef ?? 0),
+    minBef: ownedS.minBef + (alliedS?.minBef ?? 0),
+    scoreBef: ownedS.scoreBef + (alliedS?.scoreBef ?? 0),
+    metLost: ownedS.metLost + (alliedS?.metLost ?? 0),
+    minLost: ownedS.minLost + (alliedS?.minLost ?? 0),
+    scoreLost: ownedS.scoreLost + (alliedS?.scoreLost ?? 0),
+    wBef: ownedS.wBef + (alliedS?.wBef ?? 0),
+    wLost: ownedS.wLost + (alliedS?.wLost ?? 0),
+  } : null;
+
+  tradeHeaders = ['Metric', 'Owned+Allied', 'Hostile'];
+
+  if (defS && hostileS) {
     const committed = (s: SC) => [fmtPair(s.metBef, s.minBef), resScore(s.metBef, s.minBef), formatHumanNumber(s.scoreBef)];
-    const lost = (s: SC) => [fmtPair(s.metLost, s.minLost), resScore(s.metLost, s.minLost), formatHumanNumber(s.scoreLost), pctStr(s.scoreLost, s.scoreBef)];
-
-    const oC = committed(ownedS); const oL = lost(ownedS);
-    const hC = committed(hostileS); const hL = lost(hostileS);
-    const aC = alliedS ? committed(alliedS) : null;
-    const aL = alliedS ? lost(alliedS) : null;
-
-    const mk = (lbl: string, ov: string, av: string | null, hv: string): string[] =>
-      aC ? [lbl, ov, av!, hv] : [lbl, ov, hv];
-
-    const ownedHdr = `Owned (${battleReport!.ownedPlayers.join(', ')})`;
-    const hostileHdr = `Hostile (${battleReport!.hostilePlayers.join(', ')})`;
-    tradeHeaders = ['Metric', ownedHdr, ...(aC ? ['Allied'] : []), hostileHdr];
-
-    const oWin = winnerSide === 'Defenders' ? 'Won ✓' : winnerSide === 'Draw' ? '—' : '';
+    const lostCols = (s: SC) => [fmtPair(s.metLost, s.minLost), resScore(s.metLost, s.minLost), formatHumanNumber(s.scoreLost), pctStr(s.scoreLost, s.scoreBef)];
+    const dC = committed(defS); const dL = lostCols(defS);
+    const hC = committed(hostileS); const hL = lostCols(hostileS);
+    const defWin = winnerSide === 'Defenders' ? 'Won ✓' : winnerSide === 'Draw' ? '—' : '';
     const hWin = winnerSide === 'Attackers' ? 'Won ✓' : winnerSide === 'Draw' ? '—' : '';
     tradeRows = [
-      mk('Resources committed', oC[0], aC?.[0] ?? null, hC[0]),
-      mk('Resource score', oC[1], aC?.[1] ?? null, hC[1]),
-      mk('Ship score pts', oC[2], aC?.[2] ?? null, hC[2]),
-      mk('Resources lost', oL[0], aL?.[0] ?? null, hL[0]),
-      mk('Resource score lost', oL[1], aL?.[1] ?? null, hL[1]),
-      mk('Ship score pts lost', oL[2], aL?.[2] ?? null, hL[2]),
-      mk('% score lost', oL[3], aL?.[3] ?? null, hL[3]),
-      mk('Winner', oWin, aC ? '' : null, hWin),
-      mk('Score lost ratio', ratio, aC ? '' : null, ''),
+      ['Resources committed', dC[0], hC[0]],
+      ['Resource score', dC[1], hC[1]],
+      ['Ship score pts', dC[2], hC[2]],
+      ['Resources lost', dL[0], hL[0]],
+      ['Resource score lost', dL[1], hL[1]],
+      ['Ship score pts lost', dL[2], hL[2]],
+      ['% score lost', dL[3], hL[3]],
+      ['Winner', defWin, hWin],
+      ['Score lost ratio', ratio, ''],
     ];
   } else {
-    const atkPct = attackers.totalScoreBefore > 0
-      ? `${(attackers.totalScoreLost / attackers.totalScoreBefore * 100).toFixed(1)}%` : '—';
     const defPct = defenders.totalScoreBefore > 0
-      ? `${(defenders.totalScoreLost / defenders.totalScoreBefore * 100).toFixed(1)}%` : '—';
-    tradeHeaders = ['Metric', `Attackers (${attackers.players.join(', ')})`, `Defenders (${defenders.players.join(', ')})`];
+      ? `${(defenders.totalScoreLost / defenders.totalScoreBefore * 100).toFixed(2)}%` : '—';
+    const atkPct = attackers.totalScoreBefore > 0
+      ? `${(attackers.totalScoreLost / attackers.totalScoreBefore * 100).toFixed(2)}%` : '—';
     tradeRows = [
-      ['Resources committed', fmtPair(attackers.totalCostBefore.metal, attackers.totalCostBefore.mineral), fmtPair(defenders.totalCostBefore.metal, defenders.totalCostBefore.mineral)],
-      ['Resource score', resScore(attackers.totalCostBefore.metal, attackers.totalCostBefore.mineral), resScore(defenders.totalCostBefore.metal, defenders.totalCostBefore.mineral)],
-      ['Ship score pts', formatHumanNumber(attackers.totalScoreBefore), formatHumanNumber(defenders.totalScoreBefore)],
-      ['Resources lost', fmtPair(attackers.totalCostLost.metal, attackers.totalCostLost.mineral), fmtPair(defenders.totalCostLost.metal, defenders.totalCostLost.mineral)],
-      ['Resource score lost', resScore(attackers.totalCostLost.metal, attackers.totalCostLost.mineral), resScore(defenders.totalCostLost.metal, defenders.totalCostLost.mineral)],
-      ['Ship score pts lost', formatHumanNumber(attackers.totalScoreLost), formatHumanNumber(defenders.totalScoreLost)],
-      ['% score lost', atkPct, defPct],
-      ['Winner', winnerSide === 'Attackers' ? '✓' : '', winnerSide === 'Defenders' ? '✓' : ''],
+      ['Resources committed', fmtPair(defenders.totalCostBefore.metal, defenders.totalCostBefore.mineral), fmtPair(attackers.totalCostBefore.metal, attackers.totalCostBefore.mineral)],
+      ['Resource score', resScore(defenders.totalCostBefore.metal, defenders.totalCostBefore.mineral), resScore(attackers.totalCostBefore.metal, attackers.totalCostBefore.mineral)],
+      ['Ship score pts', formatHumanNumber(defenders.totalScoreBefore), formatHumanNumber(attackers.totalScoreBefore)],
+      ['Resources lost', fmtPair(defenders.totalCostLost.metal, defenders.totalCostLost.mineral), fmtPair(attackers.totalCostLost.metal, attackers.totalCostLost.mineral)],
+      ['Resource score lost', resScore(defenders.totalCostLost.metal, defenders.totalCostLost.mineral), resScore(attackers.totalCostLost.metal, attackers.totalCostLost.mineral)],
+      ['Ship score pts lost', formatHumanNumber(defenders.totalScoreLost), formatHumanNumber(attackers.totalScoreLost)],
+      ['% score lost', defPct, atkPct],
+      ['Winner', winnerSide === 'Defenders' ? 'Won ✓' : '', winnerSide === 'Attackers' ? 'Won ✓' : ''],
       ['Score lost ratio', ratio, ''],
     ];
   }
 
   parts.push(formatDiscordTable('Trade Analysis', tradeHeaders, tradeRows));
-  parts.push('Score lost ratio = hostile score pts lost / (owned + allied) score pts lost. >1 means hostile lost more score. Based on ship score_value, not resource costs.');
-
-  // Alliance score summary
-  if (result.fleets.length > 0 && battleReport) {
-    const ownedSet = new Set(battleReport.ownedPlayers);
-    const allianceMap = new Map<string, { side: string; scoreBefore: number; scoreLost: number }>();
-    for (const fleet of result.fleets) {
-      const side = fleet.side === 'attacker' ? 'Hostile'
-        : ownedSet.has(fleet.player) ? 'Owned' : 'Allied';
-      const bef = Object.entries(fleet.unitsBefore).reduce((s, [id, n]) => s + (shipsById[id]?.scoreValue ?? 0) * n, 0);
-      const lost = Object.entries(fleet.unitsLost).reduce((s, [id, n]) => s + (shipsById[id]?.scoreValue ?? 0) * n, 0);
-      const cur = allianceMap.get(fleet.alliance) ?? { side, scoreBefore: 0, scoreLost: 0 };
-      cur.scoreBefore += bef;
-      cur.scoreLost += lost;
-      allianceMap.set(fleet.alliance, cur);
-    }
-    const sideOrder: Record<string, number> = { Owned: 0, Allied: 1, Hostile: 2 };
-    const summaryRows = Array.from(allianceMap.entries())
-      .sort(([, a], [, b]) => (sideOrder[a.side] ?? 3) - (sideOrder[b.side] ?? 3))
-      .map(([alliance, { side, scoreBefore, scoreLost }]) => {
-        const pct = scoreBefore > 0 ? `${(scoreLost / scoreBefore * 100).toFixed(2)}%` : '—';
-        return [alliance, side, formatHumanNumber(scoreBefore), formatHumanNumber(scoreLost), pct];
-      });
-    parts.push(formatDiscordTable('Alliance Summary', ['Alliance', 'Side', 'Score', 'Score lost', '% lost'], summaryRows));
-  }
+  parts.push('Score lost ratio = hostile score pts lost / (owned + allied) score pts lost. >1 means hostile lost more score.');
 
   return `\`\`\`\n${parts.join('\n\n').trim()}\n\`\`\``;
 }

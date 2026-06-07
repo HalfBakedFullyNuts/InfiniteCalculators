@@ -1,6 +1,6 @@
 {
   "name": "infinitecalculators",
-  "version": "0.1.25",
+  "version": "0.1.26",
   "private": true,
   "scripts": {
     "dev": "rimraf .next && next dev",

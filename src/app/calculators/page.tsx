@@ -446,48 +446,51 @@ function CombatOutput({ combatScan, shipsById }: { combatScan: CombatScanParseRe
 
   const resScore = (met: number, min: number) => fmt(Math.round((met + min * 1.5) / 1000));
 
-  if (ownedS && hostileS) {
+  // Combine owned+allied into one defending side
+  const defS: SideSummary | null = ownedS ? {
+    metBef: ownedS.metBef + (alliedS?.metBef ?? 0),
+    minBef: ownedS.minBef + (alliedS?.minBef ?? 0),
+    scoreBef: ownedS.scoreBef + (alliedS?.scoreBef ?? 0),
+    metLost: ownedS.metLost + (alliedS?.metLost ?? 0),
+    minLost: ownedS.minLost + (alliedS?.minLost ?? 0),
+    scoreLost: ownedS.scoreLost + (alliedS?.scoreLost ?? 0),
+    wBef: ownedS.wBef + (alliedS?.wBef ?? 0),
+    wLost: ownedS.wLost + (alliedS?.wLost ?? 0),
+  } : null;
+
+  colHeaders = ['Owned+Allied', 'Hostile'];
+
+  if (defS && hostileS) {
     const cmt = (s: SideSummary): [string, string, string] => [
       fmtPair(s.metBef, s.minBef), resScore(s.metBef, s.minBef), fmt(s.scoreBef),
     ];
     const lst = (s: SideSummary): [string, string, string, string] => [
       fmtPair(s.metLost, s.minLost), resScore(s.metLost, s.minLost), fmt(s.scoreLost), pct(s.scoreLost, s.scoreBef),
     ];
-    const oC = cmt(ownedS); const oL = lst(ownedS);
+    const dC = cmt(defS); const dL = lst(defS);
     const hC = cmt(hostileS); const hL = lst(hostileS);
-    const aC = alliedS ? cmt(alliedS) : null;
-    const aL = alliedS ? lst(alliedS) : null;
-
-    const mk = (label: string, ov: string, av: string | null, hv: string, isLoss?: boolean): TradeRow => ({
-      label,
-      cols: aC ? [ov, av!, hv] : [ov, hv],
-      isLoss,
-    });
-
-    colHeaders = [`Owned — ${battleReport!.ownedPlayers.join(', ')}`, ...(aC ? ['Allied'] : []), `Hostile — ${battleReport!.hostilePlayers.join(', ')}`];
     tradeRows = [
-      mk('Resources committed', oC[0], aC?.[0] ?? null, hC[0]),
-      mk('Resource score', oC[1], aC?.[1] ?? null, hC[1]),
-      mk('Ship score pts', oC[2], aC?.[2] ?? null, hC[2]),
+      { label: 'Resources committed', cols: [dC[0], hC[0]] },
+      { label: 'Resource score', cols: [dC[1], hC[1]] },
+      { label: 'Ship score pts', cols: [dC[2], hC[2]] },
       null,
-      mk('Resources lost', oL[0], aL?.[0] ?? null, hL[0], true),
-      mk('Resource score lost', oL[1], aL?.[1] ?? null, hL[1], true),
-      mk('Ship score pts lost', oL[2], aL?.[2] ?? null, hL[2], true),
-      mk('% score lost', oL[3], aL?.[3] ?? null, hL[3], true),
+      { label: 'Resources lost', cols: [dL[0], hL[0]], isLoss: true },
+      { label: 'Resource score lost', cols: [dL[1], hL[1]], isLoss: true },
+      { label: 'Ship score pts lost', cols: [dL[2], hL[2]], isLoss: true },
+      { label: '% score lost', cols: [dL[3], hL[3]], isLoss: true },
     ];
   } else {
-    const atkPct = pct(attackers.totalScoreLost, attackers.totalScoreBefore);
     const defPct = pct(defenders.totalScoreLost, defenders.totalScoreBefore);
-    colHeaders = [`⚔️ Attk — ${attackers.players.join(', ')}`, `🛡️ Def — ${defenders.players.join(', ')}`];
+    const atkPct = pct(attackers.totalScoreLost, attackers.totalScoreBefore);
     tradeRows = [
-      { label: 'Resources committed', cols: [fmtPair(attackers.totalCostBefore.metal, attackers.totalCostBefore.mineral), fmtPair(defenders.totalCostBefore.metal, defenders.totalCostBefore.mineral)] },
-      { label: 'Resource score', cols: [resScore(attackers.totalCostBefore.metal, attackers.totalCostBefore.mineral), resScore(defenders.totalCostBefore.metal, defenders.totalCostBefore.mineral)] },
-      { label: 'Ship score pts', cols: [fmt(attackers.totalScoreBefore), fmt(defenders.totalScoreBefore)] },
+      { label: 'Resources committed', cols: [fmtPair(defenders.totalCostBefore.metal, defenders.totalCostBefore.mineral), fmtPair(attackers.totalCostBefore.metal, attackers.totalCostBefore.mineral)] },
+      { label: 'Resource score', cols: [resScore(defenders.totalCostBefore.metal, defenders.totalCostBefore.mineral), resScore(attackers.totalCostBefore.metal, attackers.totalCostBefore.mineral)] },
+      { label: 'Ship score pts', cols: [fmt(defenders.totalScoreBefore), fmt(attackers.totalScoreBefore)] },
       null,
-      { label: 'Resources lost', cols: [fmtPair(attackers.totalCostLost.metal, attackers.totalCostLost.mineral), fmtPair(defenders.totalCostLost.metal, defenders.totalCostLost.mineral)], isLoss: true },
-      { label: 'Resource score lost', cols: [resScore(attackers.totalCostLost.metal, attackers.totalCostLost.mineral), resScore(defenders.totalCostLost.metal, defenders.totalCostLost.mineral)], isLoss: true },
-      { label: 'Ship score pts lost', cols: [fmt(attackers.totalScoreLost), fmt(defenders.totalScoreLost)], isLoss: true },
-      { label: '% score lost', cols: [atkPct, defPct], isLoss: true },
+      { label: 'Resources lost', cols: [fmtPair(defenders.totalCostLost.metal, defenders.totalCostLost.mineral), fmtPair(attackers.totalCostLost.metal, attackers.totalCostLost.mineral)], isLoss: true },
+      { label: 'Resource score lost', cols: [resScore(defenders.totalCostLost.metal, defenders.totalCostLost.mineral), resScore(attackers.totalCostLost.metal, attackers.totalCostLost.mineral)], isLoss: true },
+      { label: 'Ship score pts lost', cols: [fmt(defenders.totalScoreLost), fmt(attackers.totalScoreLost)], isLoss: true },
+      { label: '% score lost', cols: [defPct, atkPct], isLoss: true },
     ];
   }
 
@@ -556,11 +559,7 @@ function CombatOutput({ combatScan, shipsById }: { combatScan: CombatScanParseRe
         <div>
           <div style={{ fontSize: 10, color: 'var(--t3)', marginBottom: 2 }}>Outcome</div>
           <div style={{ fontSize: 14, fontWeight: 700, color: atkWon || defWon ? 'var(--green)' : 'var(--amber)' }}>
-            {atkWon
-              ? `🟢 ${ownedS ? 'Hostile' : 'Attackers'} won`
-              : defWon
-                ? `🟢 ${ownedS ? 'Owned' : 'Defenders'} won`
-                : '🟡 Even trade'}
+            {atkWon ? '🟢 Hostile won' : defWon ? '🟢 Owned+Allied won' : '🟡 Even trade'}
             {(atkWon || defWon) && marginPts > 0 && (
               <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--t2)', marginLeft: 8 }}>
                 ({marginPts.toFixed(1)} pp margin)
@@ -609,58 +608,6 @@ function CombatOutput({ combatScan, shipsById }: { combatScan: CombatScanParseRe
         {' '}Based on each ship&apos;s <code>score_value</code> from the game data, not on resource costs.
       </div>
 
-      {/* Alliance score summary */}
-      {combatScan.fleets.length > 0 && battleReport && (
-        <div style={{ marginTop: 12 }}>
-          <SectionLabel text="Alliance Summary" />
-          <div style={{ borderRadius: 7, border: '1px solid var(--br)', overflow: 'hidden' }}>
-            <table className="c-table">
-              <thead>
-                <tr>
-                  <th style={{ textAlign: 'left' }}>Alliance</th>
-                  <th>Side</th>
-                  <th style={{ textAlign: 'right' }}>Score</th>
-                  <th style={{ textAlign: 'right' }}>Score lost</th>
-                  <th style={{ textAlign: 'right' }}>% lost</th>
-                </tr>
-              </thead>
-              <tbody>
-                {(() => {
-                  const ownedSet = new Set(battleReport.ownedPlayers);
-                  const hostileSet = new Set(battleReport.hostilePlayers);
-                  const allianceMap = new Map<string, { side: string; scoreBefore: number; scoreLost: number }>();
-                  for (const fleet of combatScan.fleets) {
-                    const side = fleet.side === 'attacker' ? 'Hostile'
-                      : ownedSet.has(fleet.player) ? 'Owned' : 'Allied';
-                    const bef = Object.entries(fleet.unitsBefore).reduce((s, [id, n]) => s + (shipsById[id]?.scoreValue ?? 0) * n, 0);
-                    const lost = Object.entries(fleet.unitsLost).reduce((s, [id, n]) => s + (shipsById[id]?.scoreValue ?? 0) * n, 0);
-                    const cur = allianceMap.get(fleet.alliance) ?? { side, scoreBefore: 0, scoreLost: 0 };
-                    cur.scoreBefore += bef;
-                    cur.scoreLost += lost;
-                    allianceMap.set(fleet.alliance, cur);
-                  }
-                  const sideOrder: Record<string, number> = { Owned: 0, Allied: 1, Hostile: 2 };
-                  return Array.from(allianceMap.entries())
-                    .sort(([, a], [, b]) => (sideOrder[a.side] ?? 3) - (sideOrder[b.side] ?? 3))
-                    .map(([alliance, { side, scoreBefore, scoreLost }]) => {
-                      const sideColor = side === 'Hostile' ? 'var(--r-mineral)' : side === 'Allied' ? 'var(--t2)' : 'var(--cyan)';
-                      const pctLost = scoreBefore > 0 ? `${(scoreLost / scoreBefore * 100).toFixed(2)}%` : '—';
-                      return (
-                        <tr key={alliance}>
-                          <td style={{ fontWeight: 600 }}>{alliance}</td>
-                          <td style={{ textAlign: 'center', fontSize: 11, fontWeight: 600, color: sideColor }}>{side}</td>
-                          <td style={{ textAlign: 'right', fontFamily: 'var(--mono)' }}>{formatHumanNumber(scoreBefore)}</td>
-                          <td style={{ textAlign: 'right', fontFamily: 'var(--mono)', color: 'var(--r-mineral)' }}>{scoreLost > 0 ? formatHumanNumber(scoreLost) : '—'}</td>
-                          <td style={{ textAlign: 'right', color: 'var(--t3)' }}>{pctLost}</td>
-                        </tr>
-                      );
-                    });
-                })()}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
     </>
   );
 }
