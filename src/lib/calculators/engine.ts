@@ -2890,10 +2890,16 @@ function parseRadarFleetRows(sysLines: string[]): RadarFleet[] {
       if (l.match(RADAR_PLAYER_RE) && !RADAR_COORDS_RE.test(l)) break;
 
       if (stage === 0) { originName = l; stage++; }
-      else if (stage === 1 && RADAR_COORDS_RE.test(l)) { originCoords = l; stage++; }
+      else if (stage === 1) {
+        if (RADAR_COORDS_RE.test(l)) { originCoords = l; stage++; }
+        else if (l === '→') { stage = 3; }  // origin coords absent — jump straight to dest
+      }
       else if (stage === 2 && l === '→') { stage++; }
       else if (stage === 3) { destName = l; stage++; }
-      else if (stage === 4 && RADAR_COORDS_RE.test(l)) { destCoords = l; stage++; }
+      else if (stage === 4) {
+        if (RADAR_COORDS_RE.test(l)) { destCoords = l; stage++; }
+        else { const em = l.match(RADAR_ETA_RE); if (em) { eta = Number(em[1]); stage = 6; } }
+      }
       else if (stage === 5) {
         const em = l.match(RADAR_ETA_RE);
         if (em) { eta = Number(em[1]); stage++; }
@@ -2910,6 +2916,46 @@ function parseRadarFleetRows(sysLines: string[]): RadarFleet[] {
   return fleets;
 }
 
+
+const PLANET_COORDS_RE = /^(d+):(d+):(d+)$/;
+
+function parsePlanetRadarSections(lines: string[]): RadarSystemSummary[] {
+  // Individual planet Comms tab: flat table with Fleet/Ruler/Route/ETA/Score column headers
+  const tableIdx = lines.findIndex(
+    (l, i) => safeLower(l) === 'fleet' && i + 1 < lines.length && safeLower(lines[i + 1]) === 'ruler',
+  );
+  if (tableIdx < 0) return [];
+
+  const fleets = parseRadarFleetRows(lines.slice(tableIdx));
+  if (fleets.length === 0) return [];
+
+  let systemId = '';
+  for (const line of lines.slice(0, tableIdx)) {
+    const m = line.match(PLANET_COORDS_RE);
+    if (m) { systemId = m[1] + '/' + m[2]; break; }
+  }
+
+  const destName = fleets[0]?.destName ?? '';
+  const destCoords = fleets[0]?.destCoords ?? '';
+  if (!systemId && destCoords) {
+    const m = destCoords.match(PLANET_COORDS_RE);
+    if (m) systemId = m[1] + '/' + m[2];
+  }
+
+  const allianceMap = new Map<string, { count: number; players: Set<string> }>();
+  for (const f of fleets) {
+    const entry = allianceMap.get(f.alliance) ?? { count: 0, players: new Set<string>() };
+    entry.count++;
+    entry.players.add(f.player);
+    allianceMap.set(f.alliance, entry);
+  }
+  const byAlliance: RadarAllianceSummary[] = Array.from(allianceMap.entries())
+    .map(([alliance, data]) => ({ alliance, count: data.count, players: Array.from(data.players).sort() }))
+    .sort((a, b) => b.count - a.count);
+
+  return [{ systemId: systemId || destName || 'unknown', destName, destCoords, fleets, byAlliance }];
+}
+
 export function parseRadarInput(rawInput: string): RadarParseResult {
   const warnings: string[] = [];
   const text = rawInput.replace(ANSI_RE, '').replace(/ /g, ' ').replace(/\r/g, '\n');
@@ -2921,8 +2967,9 @@ export function parseRadarInput(rawInput: string): RadarParseResult {
   }
 
   if (sysStarts.length === 0) {
-    warnings.push('No radar systems detected. Paste the full Radar page (Ctrl+A).');
-    return { systems: [], warnings };
+    const planetSystems = parsePlanetRadarSections(lines);
+    if (planetSystems.length > 0) return { systems: planetSystems, warnings };
+    warnings.push("No radar data detected. Paste the Radar page (Ctrl+A) or a planet's Comms tab.");
   }
 
   const systems: RadarSystemSummary[] = [];
