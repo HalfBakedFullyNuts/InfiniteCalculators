@@ -462,34 +462,28 @@ function CombatOutput({ combatScan, shipsById }: { combatScan: CombatScanParseRe
   colHeaders = ['Owned+Allied', 'Hostile'];
 
   if (defS && hostileS) {
-    const cmt = (s: SideSummary): [string, string, string] => [
-      fmtPair(s.metBef, s.minBef), resScore(s.metBef, s.minBef), fmt(s.scoreBef),
-    ];
-    const lst = (s: SideSummary): [string, string, string, string] => [
-      fmtPair(s.metLost, s.minLost), resScore(s.metLost, s.minLost), fmt(s.scoreLost), pct(s.scoreLost, s.scoreBef),
+    const cmt = (s: SideSummary): [string, string] => [fmtPair(s.metBef, s.minBef), fmt(s.scoreBef)];
+    const lst = (s: SideSummary): [string, string, string] => [
+      fmtPair(s.metLost, s.minLost), fmt(s.scoreLost), pct(s.scoreLost, s.scoreBef),
     ];
     const dC = cmt(defS); const dL = lst(defS);
     const hC = cmt(hostileS); const hL = lst(hostileS);
     tradeRows = [
       { label: 'Resources committed', cols: [dC[0], hC[0]] },
-      { label: 'Resource score', cols: [dC[1], hC[1]] },
-      { label: 'Ship score pts', cols: [dC[2], hC[2]] },
+      { label: 'Ship score pts', cols: [dC[1], hC[1]] },
       null,
       { label: 'Resources lost', cols: [dL[0], hL[0]], isLoss: true },
-      { label: 'Resource score lost', cols: [dL[1], hL[1]], isLoss: true },
-      { label: 'Ship score pts lost', cols: [dL[2], hL[2]], isLoss: true },
-      { label: '% score lost', cols: [dL[3], hL[3]], isLoss: true },
+      { label: 'Ship score pts lost', cols: [dL[1], hL[1]], isLoss: true },
+      { label: '% score lost', cols: [dL[2], hL[2]], isLoss: true },
     ];
   } else {
     const defPct = pct(defenders.totalScoreLost, defenders.totalScoreBefore);
     const atkPct = pct(attackers.totalScoreLost, attackers.totalScoreBefore);
     tradeRows = [
       { label: 'Resources committed', cols: [fmtPair(defenders.totalCostBefore.metal, defenders.totalCostBefore.mineral), fmtPair(attackers.totalCostBefore.metal, attackers.totalCostBefore.mineral)] },
-      { label: 'Resource score', cols: [resScore(defenders.totalCostBefore.metal, defenders.totalCostBefore.mineral), resScore(attackers.totalCostBefore.metal, attackers.totalCostBefore.mineral)] },
       { label: 'Ship score pts', cols: [fmt(defenders.totalScoreBefore), fmt(attackers.totalScoreBefore)] },
       null,
       { label: 'Resources lost', cols: [fmtPair(defenders.totalCostLost.metal, defenders.totalCostLost.mineral), fmtPair(attackers.totalCostLost.metal, attackers.totalCostLost.mineral)], isLoss: true },
-      { label: 'Resource score lost', cols: [resScore(defenders.totalCostLost.metal, defenders.totalCostLost.mineral), resScore(attackers.totalCostLost.metal, attackers.totalCostLost.mineral)], isLoss: true },
       { label: 'Ship score pts lost', cols: [fmt(defenders.totalScoreLost), fmt(attackers.totalScoreLost)], isLoss: true },
       { label: '% score lost', cols: [defPct, atkPct], isLoss: true },
     ];
@@ -603,10 +597,8 @@ function CombatOutput({ combatScan, shipsById }: { combatScan: CombatScanParseRe
           </tbody>
         </table>
       </div>
-      <div style={{ marginTop: 8, padding: '7px 10px', borderRadius: 6, background: 'rgba(0,0,0,0.2)', border: '1px solid var(--br)', fontSize: 11, color: 'var(--t3)', lineHeight: 1.5 }}>
-        <strong style={{ color: 'var(--t2)' }}>Score lost ratio</strong> = hostile ship score pts lost ÷ (owned + allied) ship score pts lost.
-        {' '}A ratio &gt; 1 means hostile lost more score than the defending side — the higher the number, the more one-sided the victory.
-        {' '}Based on each ship&apos;s <code>score_value</code> from the game data, not on resource costs.
+      <div style={{ marginTop: 8, fontSize: 11, color: 'var(--t3)' }}>
+        Score lost ratio {Number.isFinite(tradeRatio) && tradeRatio < 99 ? tradeRatio.toFixed(2) : '∞'} = hostile score lost ÷ (owned+allied) score lost
       </div>
 
     </>

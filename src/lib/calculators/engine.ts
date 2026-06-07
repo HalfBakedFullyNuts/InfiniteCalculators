@@ -2640,8 +2640,10 @@ export function parseCombatScanInput(rawInput: string, defs: GameDefs): CombatSc
   if (battleReportResult) {
     const sc = battleReportResult.summaryColumns;
     const allIds = new Set([...Object.keys(sc.owned), ...Object.keys(sc.allied), ...Object.keys(sc.hostile)]);
+    // Exclude population units — they are cargo/passengers, not combat ships
+    const POPULATION_IDS = new Set(['worker', 'soldier', 'scientist']);
     const rows: BattleReportShipRow[] = Object.keys(defs.shipsById)
-      .filter((id) => allIds.has(id))
+      .filter((id) => allIds.has(id) && !POPULATION_IDS.has(id))
       .map((id) => ({
         shipId: id,
         ownedBefore:  sc.owned[id]      || 0,
@@ -2669,9 +2671,10 @@ function combatSideCosts(
   shipsById: Record<string, ShipDef>,
 ): { metBef: number; minBef: number; scoreBef: number; metLost: number; minLost: number; scoreLost: number; wBef: number; wLost: number } {
   let metBef = 0, minBef = 0, scoreBef = 0, metLost = 0, minLost = 0, scoreLost = 0, wBef = 0, wLost = 0;
+  const POPULATION_IDS_COSTS = new Set(['worker', 'soldier', 'scientist']);
   for (const row of rows) {
     const ship = shipsById[row.shipId];
-    if (!ship) continue;
+    if (!ship || POPULATION_IDS_COSTS.has(row.shipId)) continue;
     const [bef, aft] = getCount(row);
     const lost = Math.max(0, bef - aft);
     metBef += ship.costs.metal * bef;
@@ -2752,34 +2755,28 @@ export function formatCombatScanAsDiscord(result: CombatScanParseResult, shipsBy
     const lostCols = (s: SC) => [fmtPair(s.metLost, s.minLost), resScore(s.metLost, s.minLost), formatHumanNumber(s.scoreLost), pctStr(s.scoreLost, s.scoreBef)];
     const dC = committed(defS); const dL = lostCols(defS);
     const hC = committed(hostileS); const hL = lostCols(hostileS);
-    const defWin = winnerSide === 'Defenders' ? 'Won ✓' : winnerSide === 'Draw' ? '—' : '';
-    const hWin = winnerSide === 'Attackers' ? 'Won ✓' : winnerSide === 'Draw' ? '—' : '';
+    const outcome = winnerSide === 'Defenders' ? `Owned+Allied (${ratio})` : winnerSide === 'Attackers' ? `Hostile (${ratio})` : `Draw (${ratio})`;
     tradeRows = [
       ['Resources committed', dC[0], hC[0]],
-      ['Resource score', dC[1], hC[1]],
       ['Ship score pts', dC[2], hC[2]],
       ['Resources lost', dL[0], hL[0]],
-      ['Resource score lost', dL[1], hL[1]],
       ['Ship score pts lost', dL[2], hL[2]],
       ['% score lost', dL[3], hL[3]],
-      ['Winner', defWin, hWin],
-      ['Score lost ratio', ratio, ''],
+      ['Winner (ratio)', outcome, ''],
     ];
   } else {
     const defPct = defenders.totalScoreBefore > 0
       ? `${(defenders.totalScoreLost / defenders.totalScoreBefore * 100).toFixed(2)}%` : '—';
     const atkPct = attackers.totalScoreBefore > 0
       ? `${(attackers.totalScoreLost / attackers.totalScoreBefore * 100).toFixed(2)}%` : '—';
+    const outcome = winnerSide === 'Defenders' ? `Owned+Allied (${ratio})` : winnerSide === 'Attackers' ? `Hostile (${ratio})` : `Draw (${ratio})`;
     tradeRows = [
       ['Resources committed', fmtPair(defenders.totalCostBefore.metal, defenders.totalCostBefore.mineral), fmtPair(attackers.totalCostBefore.metal, attackers.totalCostBefore.mineral)],
-      ['Resource score', resScore(defenders.totalCostBefore.metal, defenders.totalCostBefore.mineral), resScore(attackers.totalCostBefore.metal, attackers.totalCostBefore.mineral)],
       ['Ship score pts', formatHumanNumber(defenders.totalScoreBefore), formatHumanNumber(attackers.totalScoreBefore)],
       ['Resources lost', fmtPair(defenders.totalCostLost.metal, defenders.totalCostLost.mineral), fmtPair(attackers.totalCostLost.metal, attackers.totalCostLost.mineral)],
-      ['Resource score lost', resScore(defenders.totalCostLost.metal, defenders.totalCostLost.mineral), resScore(attackers.totalCostLost.metal, attackers.totalCostLost.mineral)],
       ['Ship score pts lost', formatHumanNumber(defenders.totalScoreLost), formatHumanNumber(attackers.totalScoreLost)],
       ['% score lost', defPct, atkPct],
-      ['Winner', winnerSide === 'Defenders' ? 'Won ✓' : '', winnerSide === 'Attackers' ? 'Won ✓' : ''],
-      ['Score lost ratio', ratio, ''],
+      ['Winner (ratio)', outcome, ''],
     ];
   }
 
