@@ -445,7 +445,8 @@ function CombatOutput({ combatScan, shipsById }: { combatScan: CombatScanParseRe
   let colHeaders: string[];
   let tradeRows: TradeRow[];
 
-  const resScore = (met: number, min: number) => fmt(Math.round((met + min * 1.5) / 1000));
+  // score pts per resource: metal/1000 × 1  and  mineral/1000 × 1.5
+  const fmtResPair = (met: number, min: number) => `${fmt(met / 1000)} / ${fmt(min * 1.5 / 1000)}`;
 
   // Combine owned+allied into one defending side
   const defS: SideSummary | null = ownedS ? {
@@ -462,28 +463,22 @@ function CombatOutput({ combatScan, shipsById }: { combatScan: CombatScanParseRe
   colHeaders = ['Owned+Allied', 'Hostile'];
 
   if (defS && hostileS) {
-    const cmt = (s: SideSummary): [string, string] => [fmtPair(s.metBef, s.minBef), fmt(s.scoreBef)];
-    const lst = (s: SideSummary): [string, string, string] => [
-      fmtPair(s.metLost, s.minLost), fmt(s.scoreLost), pct(s.scoreLost, s.scoreBef),
-    ];
-    const dC = cmt(defS); const dL = lst(defS);
-    const hC = cmt(hostileS); const hL = lst(hostileS);
     tradeRows = [
-      { label: 'Resources committed', cols: [dC[0], hC[0]] },
-      { label: 'Ship score pts', cols: [dC[1], hC[1]] },
+      { label: 'Resources committed', cols: [fmtResPair(defS.metBef, defS.minBef), fmtResPair(hostileS.metBef, hostileS.minBef)] },
+      { label: 'Resources lost', cols: [fmtResPair(defS.metLost, defS.minLost), fmtResPair(hostileS.metLost, hostileS.minLost)], isLoss: true },
       null,
-      { label: 'Resources lost', cols: [dL[0], hL[0]], isLoss: true },
-      { label: 'Ship score pts lost', cols: [dL[1], hL[1]], isLoss: true },
-      { label: '% score lost', cols: [dL[2], hL[2]], isLoss: true },
+      { label: 'Ship score pts', cols: [fmt(defS.scoreBef), fmt(hostileS.scoreBef)] },
+      { label: 'Ship score pts lost', cols: [fmt(defS.scoreLost), fmt(hostileS.scoreLost)], isLoss: true },
+      { label: '% score lost', cols: [pct(defS.scoreLost, defS.scoreBef), pct(hostileS.scoreLost, hostileS.scoreBef)], isLoss: true },
     ];
   } else {
     const defPct = pct(defenders.totalScoreLost, defenders.totalScoreBefore);
     const atkPct = pct(attackers.totalScoreLost, attackers.totalScoreBefore);
     tradeRows = [
-      { label: 'Resources committed', cols: [fmtPair(defenders.totalCostBefore.metal, defenders.totalCostBefore.mineral), fmtPair(attackers.totalCostBefore.metal, attackers.totalCostBefore.mineral)] },
-      { label: 'Ship score pts', cols: [fmt(defenders.totalScoreBefore), fmt(attackers.totalScoreBefore)] },
+      { label: 'Resources committed', cols: [fmtResPair(defenders.totalCostBefore.metal, defenders.totalCostBefore.mineral), fmtResPair(attackers.totalCostBefore.metal, attackers.totalCostBefore.mineral)] },
+      { label: 'Resources lost', cols: [fmtResPair(defenders.totalCostLost.metal, defenders.totalCostLost.mineral), fmtResPair(attackers.totalCostLost.metal, attackers.totalCostLost.mineral)], isLoss: true },
       null,
-      { label: 'Resources lost', cols: [fmtPair(defenders.totalCostLost.metal, defenders.totalCostLost.mineral), fmtPair(attackers.totalCostLost.metal, attackers.totalCostLost.mineral)], isLoss: true },
+      { label: 'Ship score pts', cols: [fmt(defenders.totalScoreBefore), fmt(attackers.totalScoreBefore)] },
       { label: 'Ship score pts lost', cols: [fmt(defenders.totalScoreLost), fmt(attackers.totalScoreLost)], isLoss: true },
       { label: '% score lost', cols: [defPct, atkPct], isLoss: true },
     ];
@@ -530,16 +525,16 @@ function CombatOutput({ combatScan, shipsById }: { combatScan: CombatScanParseRe
                 {battleReport.rows.map((r) => (
                   <tr key={r.shipId}>
                     <td style={{ fontWeight: 500 }}>{shipsById[r.shipId]?.name ?? r.shipId}</td>
-                    <td style={{ color: 'var(--t2)' }}>{r.ownedBefore || '—'}</td>
-                    <td style={{ color: r.ownedAfter < r.ownedBefore ? 'var(--r-mineral)' : 'var(--t2)' }}>{r.ownedAfter || '—'}</td>
+                    <td style={{ color: 'var(--t2)' }}>{r.ownedBefore}</td>
+                    <td style={{ color: r.ownedAfter < r.ownedBefore ? 'var(--r-mineral)' : 'var(--t2)' }}>{r.ownedAfter}</td>
                     {hasAllied && (
                       <>
-                        <td style={{ color: 'var(--t2)' }}>{r.alliedBefore || '—'}</td>
-                        <td style={{ color: r.alliedAfter < r.alliedBefore ? 'var(--r-mineral)' : 'var(--t2)' }}>{r.alliedAfter || '—'}</td>
+                        <td style={{ color: 'var(--t2)' }}>{r.alliedBefore}</td>
+                        <td style={{ color: r.alliedAfter < r.alliedBefore ? 'var(--r-mineral)' : 'var(--t2)' }}>{r.alliedAfter}</td>
                       </>
                     )}
-                    <td style={{ color: 'var(--t2)' }}>{r.hostileBefore || '—'}</td>
-                    <td style={{ color: r.hostileAfter < r.hostileBefore ? 'var(--r-mineral)' : 'var(--t2)' }}>{r.hostileAfter || '—'}</td>
+                    <td style={{ color: 'var(--t2)' }}>{r.hostileBefore}</td>
+                    <td style={{ color: r.hostileAfter < r.hostileBefore ? 'var(--r-mineral)' : 'var(--t2)' }}>{r.hostileAfter}</td>
                   </tr>
                 ))}
               </tbody>
@@ -589,7 +584,7 @@ function CombatOutput({ combatScan, shipsById }: { combatScan: CombatScanParseRe
                 <tr key={`${label}-${i}`}>
                   <td style={{ color: 'var(--t3)' }}>{label}</td>
                   {cols.map((v, j) => (
-                    <td key={j} style={{ textAlign: 'right', color: isLoss && v !== '—' && v !== '0' && v !== '0.00%' ? 'var(--r-mineral)' : undefined }}>{v}</td>
+                    <td key={j} style={{ textAlign: 'right', color: isLoss && parseFloat(v) !== 0 ? 'var(--r-mineral)' : undefined }}>{v}</td>
                   ))}
                 </tr>
               );

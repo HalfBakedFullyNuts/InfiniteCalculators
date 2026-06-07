@@ -2711,10 +2711,10 @@ export function formatCombatScanAsDiscord(result: CombatScanParseResult, shipsBy
     const tableRows = battleReport.rows.map((r) => {
       const row: string[] = [
         shipsById[r.shipId]?.name ?? r.shipId,
-        String(r.ownedBefore || '—'), String(r.ownedAfter || '—'),
+        String(r.ownedBefore), String(r.ownedAfter),
       ];
-      if (hasAllied) row.push(String(r.alliedBefore || '—'), String(r.alliedAfter || '—'));
-      row.push(String(r.hostileBefore || '—'), String(r.hostileAfter || '—'));
+      if (hasAllied) row.push(String(r.alliedBefore), String(r.alliedAfter));
+      row.push(String(r.hostileBefore), String(r.hostileAfter));
       return row;
     });
     const headers = ['Ship', 'O.Bef', 'O.Aft'];
@@ -2733,7 +2733,7 @@ export function formatCombatScanAsDiscord(result: CombatScanParseResult, shipsBy
   let tradeHeaders: string[];
   let tradeRows: string[][];
 
-  const resScore = (met: number, min: number) => formatHumanNumber(Math.round((met + min * 1.5) / 1000));
+  const fmtResPair = (met: number, min: number) => `${formatHumanNumber(met / 1000)} / ${formatHumanNumber(min * 1.5 / 1000)}`;
 
   // Combine owned+allied into one defending side
   type SC = { metBef: number; minBef: number; scoreBef: number; metLost: number; minLost: number; scoreLost: number; wBef: number; wLost: number };
@@ -2751,17 +2751,13 @@ export function formatCombatScanAsDiscord(result: CombatScanParseResult, shipsBy
   tradeHeaders = ['Metric', 'Owned+Allied', 'Hostile'];
 
   if (defS && hostileS) {
-    const committed = (s: SC) => [fmtPair(s.metBef, s.minBef), resScore(s.metBef, s.minBef), formatHumanNumber(s.scoreBef)];
-    const lostCols = (s: SC) => [fmtPair(s.metLost, s.minLost), resScore(s.metLost, s.minLost), formatHumanNumber(s.scoreLost), pctStr(s.scoreLost, s.scoreBef)];
-    const dC = committed(defS); const dL = lostCols(defS);
-    const hC = committed(hostileS); const hL = lostCols(hostileS);
     const outcome = winnerSide === 'Defenders' ? `Owned+Allied (${ratio})` : winnerSide === 'Attackers' ? `Hostile (${ratio})` : `Draw (${ratio})`;
     tradeRows = [
-      ['Resources committed', dC[0], hC[0]],
-      ['Ship score pts', dC[2], hC[2]],
-      ['Resources lost', dL[0], hL[0]],
-      ['Ship score pts lost', dL[2], hL[2]],
-      ['% score lost', dL[3], hL[3]],
+      ['Resources committed', fmtResPair(defS.metBef, defS.minBef), fmtResPair(hostileS.metBef, hostileS.minBef)],
+      ['Resources lost', fmtResPair(defS.metLost, defS.minLost), fmtResPair(hostileS.metLost, hostileS.minLost)],
+      ['Ship score pts', formatHumanNumber(defS.scoreBef), formatHumanNumber(hostileS.scoreBef)],
+      ['Ship score pts lost', formatHumanNumber(defS.scoreLost), formatHumanNumber(hostileS.scoreLost)],
+      ['% score lost', pctStr(defS.scoreLost, defS.scoreBef), pctStr(hostileS.scoreLost, hostileS.scoreBef)],
       ['Winner (ratio)', outcome, ''],
     ];
   } else {
@@ -2771,9 +2767,9 @@ export function formatCombatScanAsDiscord(result: CombatScanParseResult, shipsBy
       ? `${(attackers.totalScoreLost / attackers.totalScoreBefore * 100).toFixed(2)}%` : '—';
     const outcome = winnerSide === 'Defenders' ? `Owned+Allied (${ratio})` : winnerSide === 'Attackers' ? `Hostile (${ratio})` : `Draw (${ratio})`;
     tradeRows = [
-      ['Resources committed', fmtPair(defenders.totalCostBefore.metal, defenders.totalCostBefore.mineral), fmtPair(attackers.totalCostBefore.metal, attackers.totalCostBefore.mineral)],
+      ['Resources committed', fmtResPair(defenders.totalCostBefore.metal, defenders.totalCostBefore.mineral), fmtResPair(attackers.totalCostBefore.metal, attackers.totalCostBefore.mineral)],
+      ['Resources lost', fmtResPair(defenders.totalCostLost.metal, defenders.totalCostLost.mineral), fmtResPair(attackers.totalCostLost.metal, attackers.totalCostLost.mineral)],
       ['Ship score pts', formatHumanNumber(defenders.totalScoreBefore), formatHumanNumber(attackers.totalScoreBefore)],
-      ['Resources lost', fmtPair(defenders.totalCostLost.metal, defenders.totalCostLost.mineral), fmtPair(attackers.totalCostLost.metal, attackers.totalCostLost.mineral)],
       ['Ship score pts lost', formatHumanNumber(defenders.totalScoreLost), formatHumanNumber(attackers.totalScoreLost)],
       ['% score lost', defPct, atkPct],
       ['Winner (ratio)', outcome, ''],
