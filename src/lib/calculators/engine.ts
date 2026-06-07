@@ -2705,8 +2705,6 @@ export function formatCombatScanAsDiscord(result: CombatScanParseResult, shipsBy
   // Battle report table — only show Allied columns when allied ships are present
   if (battleReport && battleReport.rows.length > 0) {
     const hasAllied = battleReport.rows.some((r) => r.alliedBefore > 0 || r.alliedAfter > 0);
-    const ownedLabel = `Owned (${battleReport.ownedPlayers.join(', ')})`;
-    const hostileLabel = `Hostile (${battleReport.hostilePlayers.join(', ')})`;
     const tableRows = battleReport.rows.map((r) => {
       const row: string[] = [
         shipsById[r.shipId]?.name ?? r.shipId,
@@ -2719,7 +2717,6 @@ export function formatCombatScanAsDiscord(result: CombatScanParseResult, shipsBy
     const headers = ['Ship', 'O.Bef', 'O.Aft'];
     if (hasAllied) headers.push('A.Bef', 'A.Aft');
     headers.push('H.Bef', 'H.Aft');
-    parts.push(`Ships  |  ${ownedLabel}${hasAllied ? '  |  Allied' : ''}  |  ${hostileLabel}`);
     parts.push(formatDiscordTable('', headers, tableRows));
 
   }
@@ -2787,9 +2784,9 @@ export function formatCombatScanAsDiscord(result: CombatScanParseResult, shipsBy
   }
 
   parts.push(formatDiscordTable('Trade Analysis', tradeHeaders, tradeRows));
-  parts.push('Score lost ratio = hostile score pts lost / (owned + allied) score pts lost. >1 means hostile lost more score.');
+  parts.push('Ratio = hostile score lost / (owned+allied) score lost. >1 = hostile lost more.');
 
-  return `\`\`\`\n${parts.join('\n\n').trim()}\n\`\`\``;
+  return `\`\`\`\n${parts.join('\n').trim()}\n\`\`\``;
 }
 
 // Re-export formatDiscordTable for use in formatCombatScanAsDiscord
@@ -3023,4 +3020,33 @@ export function formatRadarSystemAsDiscord(system: RadarSystemSummary): string {
 
   const lines = [header, renderRow(cols), sep, ...rows.map(renderRow)];
   return `\`\`\`\n${lines.join('\n')}\n\`\`\``;
+}
+
+export function splitRadarForDiscord(exportText: string, limit = 1970): string[] {
+  if (exportText.length <= limit) return [exportText];
+
+  const inner = exportText.replace(/^```\n/, '').replace(/\n```$/, '');
+  const allLines = inner.split('\n');
+  if (allLines.length < 3) return [exportText];
+
+  // Identify header block: system title line + column header + separator
+  const headerBlock = [allLines[0], allLines[1], allLines[2]];
+  const dataLines = allLines.slice(3);
+
+  const chunks: string[] = [];
+  let current: string[] = [];
+
+  const makeChunk = (rows: string[]) => `\`\`\`\n${[...headerBlock, ...rows].join('\n')}\n\`\`\``;
+
+  for (const line of dataLines) {
+    if (makeChunk([...current, line]).length > limit && current.length > 0) {
+      chunks.push(makeChunk(current));
+      current = [line];
+    } else {
+      current.push(line);
+    }
+  }
+  if (current.length > 0) chunks.push(makeChunk(current));
+
+  return chunks.length > 0 ? chunks : [exportText];
 }

@@ -29,6 +29,7 @@ import {
   fleetFromBudget,
   FLEET_CARGO_ORDER,
   formatCombatScanAsDiscord,
+  splitRadarForDiscord,
   formatFleetOverviewAsDiscord,
   formatFleetScanAsDiscord,
   formatRadarSystemAsDiscord,
@@ -191,7 +192,7 @@ function PasteInput({ value, onChange, placeholder, hint, height = 140, demoData
   );
 }
 
-function DiscordBtn({ exportText, emptyText }: { exportText: string; emptyText?: string }) {
+function DiscordBtn({ exportText, emptyText, label }: { exportText: string; emptyText?: string; label?: string }) {
   const [open, setOpen] = React.useState(false);
   const [copied, setCopied] = React.useState(false);
   const hasData = exportText.trim().length > 0;
@@ -209,7 +210,7 @@ function DiscordBtn({ exportText, emptyText }: { exportText: string; emptyText?:
         onClick={() => hasData && setOpen((o) => !o)}
         disabled={!hasData}
         title={hasData ? 'Copy Discord export' : (emptyText || 'No data yet')}
-      >⎘ Discord</button>
+      >⎘ {label ?? 'Discord'}</button>
       {open && hasData && (
         <>
           <div className="fixed inset-0 z-[90]" onClick={() => setOpen(false)} />
@@ -1542,6 +1543,7 @@ export default function CalculatorsPage() {
                 <div className="c-anim-in mt-3 flex flex-col gap-3">
                   {radarResult.systems.map((sys) => {
                     const discord = formatRadarSystemAsDiscord(sys);
+                    const chunks = splitRadarForDiscord(discord, 1970);
                     const sorted = [...sys.fleets].sort((a, b) => a.eta - b.eta || b.score - a.score);
                     return (
                       <div key={sys.destCoords || sys.systemId} style={{ borderRadius: 7, border: '1px solid var(--br)', overflow: 'hidden' }}>
@@ -1552,7 +1554,12 @@ export default function CalculatorsPage() {
                             {sys.destCoords && <span style={{ fontSize: 11, fontFamily: 'var(--mono)', color: 'var(--t3)' }}>{sys.destCoords}</span>}
                             <span style={{ fontSize: 11, color: 'var(--t3)' }}>{sys.fleets.length} fleet{sys.fleets.length !== 1 ? 's' : ''}</span>
                           </div>
-                          <DiscordBtn exportText={discord} emptyText="No data" />
+                          <div style={{ display: 'flex', gap: 4 }}>
+                            {chunks.map((chunk, ci) => (
+                              <DiscordBtn key={ci} exportText={chunk} emptyText="No data"
+                                label={chunks.length > 1 ? `${ci + 1}/${chunks.length}` : undefined} />
+                            ))}
+                          </div>
                         </div>
                         <table className="c-table">
                           <thead>
