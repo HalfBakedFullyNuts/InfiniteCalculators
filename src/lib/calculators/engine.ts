@@ -2653,10 +2653,34 @@ export function parseCombatScanInput(rawInput: string, defs: GameDefs): CombatSc
         hostileBefore:  sc.hostile[id]      || 0,
         hostileAfter:   sc.hostileAfter[id] || 0,
       }));
+
+    // Derive actual owned/allied/hostile players from fleet data and summary columns
+    const ownedPlayerSet = new Set<string>();
+    const alliedPlayerSet = new Set<string>();
+    const hostilePlayerSet = new Set<string>();
+
+    for (const fleet of battleReportResult.fleets) {
+      // Calculate overlap with each column to determine which group this player belongs to
+      let ownedOverlap = 0, alliedOverlap = 0, hostileOverlap = 0;
+      for (const [id, count] of Object.entries(fleet.unitsBefore)) {
+        ownedOverlap += Math.min(count, sc.owned[id] || 0);
+        alliedOverlap += Math.min(count, sc.allied[id] || 0);
+        hostileOverlap += Math.min(count, sc.hostile[id] || 0);
+      }
+      // Assign to the column with highest overlap
+      if (hostileOverlap > ownedOverlap && hostileOverlap > alliedOverlap) {
+        hostilePlayerSet.add(fleet.player);
+      } else if (alliedOverlap > ownedOverlap) {
+        alliedPlayerSet.add(fleet.player);
+      } else if (ownedOverlap > 0) {
+        ownedPlayerSet.add(fleet.player);
+      }
+    }
+
     battleReport = {
       rows,
-      ownedPlayers: defenders.players,
-      hostilePlayers: attackers.players,
+      ownedPlayers: Array.from(ownedPlayerSet),
+      hostilePlayers: Array.from(hostilePlayerSet),
       location: battleReportResult.location,
       turn: battleReportResult.turn,
     };
@@ -2751,7 +2775,13 @@ export function formatCombatScanAsDiscord(result: CombatScanParseResult, shipsBy
   tradeHeaders = ['Metric', 'Owned+Allied', 'Hostile'];
 
   if (defS && hostileS) {
-    const outcome = winnerSide === 'Defenders' ? `Owned+Allied (${ratio})` : winnerSide === 'Attackers' ? `Hostile (${ratio})` : `Draw (${ratio})`;
+    // Recalculate ratio from battle report score data (not fleet-side assignments)
+    const battleRatio = defS.scoreLost > 0
+      ? hostileS.scoreLost / defS.scoreLost
+      : hostileS.scoreLost > 0 ? 99 : 1;
+    const battleWinnerSide = battleRatio < 0.95 ? 'Hostile' : battleRatio > 1.05 ? 'Owned+Allied' : 'Draw';
+    const battleRatioStr = Number.isFinite(battleRatio) && battleRatio < 99 ? battleRatio.toFixed(2) : '∞';
+    const outcome = `${battleWinnerSide} (${battleRatioStr})`;
     tradeRows = [
       ['Resources committed', fmtResPair(defS.metBef, defS.minBef), fmtResPair(hostileS.metBef, hostileS.minBef)],
       ['Resources lost', fmtResPair(defS.metLost, defS.minLost), fmtResPair(hostileS.metLost, hostileS.minLost)],
